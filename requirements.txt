@@ -19,3 +19,4 @@ unidecode
 pykeyboard
 aiofiles
 humanize
+httpx==0.24.1
