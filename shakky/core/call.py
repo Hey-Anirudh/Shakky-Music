@@ -24,7 +24,7 @@ from pytgcalls.types.stream import StreamAudioEnded
 import config
 import logging
 from shakky import app
-logger = logging.getlogger("shakky.call")
+logger = logging.getLogger("shakky.call")
 from shakky.misc import db
 from shakky.utils.database import (
     add_active_chat, add_active_video_chat,
