@@ -22,8 +22,9 @@ from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQuality
 from pytgcalls.types.stream import StreamAudioEnded
 
 import config
-from shakky import LOGGER, app
-LOGGER = LOGGER("shakky.call")
+import logging
+from shakky import app
+logger = logging.getlogger("shakky.call")
 from shakky.misc import db
 from shakky.utils.database import (
     add_active_chat, add_active_video_chat,
@@ -88,12 +89,12 @@ class Call(PyTgCalls):
             try:
                 await assistant.change_stream(chat_id, stream)
             except Exception as e:
-                LOGGER(__name__).error(f"Change stream failed: {e}")
+                logger(__name__).error(f"Change stream failed: {e}")
         except Exception as e:
             if "No active group call" in str(e):
-                LOGGER(__name__).warning(f"Voice chat not started in {chat_id}. Assistant cannot join.")
+                logger(__name__).warning(f"Voice chat not started in {chat_id}. Assistant cannot join.")
             else:
-                LOGGER(__name__).error(f"Assistant {assistant} failed to join VC: {e}")
+                logger(__name__).error(f"Assistant {assistant} failed to join VC: {e}")
             raise e
 
         # WebApp sync
@@ -194,7 +195,7 @@ class Call(PyTgCalls):
         await notify_webapp(chat_id, is_playing=False, action="stop")
 
     async def start(self):
-        LOGGER.info("Starting PyTgCalls Clients...\n")
+        logger.info("Starting PyTgCalls Clients...\n")
         await self.one.start()
         for attr in ["two", "three", "four", "five"]:
             instance = getattr(self, attr, None)
