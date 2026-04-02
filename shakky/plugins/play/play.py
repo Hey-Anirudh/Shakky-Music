@@ -4,6 +4,7 @@ from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 import config
 from shakky import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app, LOGGER
+LOGGER = LOGGER("shakky.play")
 from shakky.utils import seconds_to_min, time_to_seconds
 from shakky.utils.channelplay import get_channeplayCB
 from shakky.utils.decorators.language import languageCB
@@ -24,9 +25,9 @@ from config import BANNED_USERS, lyrical, AYU
 import random
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-import config
-from shakky import YouTube, app, LOGGER
+from shakky import YouTube, app
 from shakky.utils.decorators.language import language
+from config import BANNED_USERS
 
 @app.on_message(
     filters.command(["play", "vplay", "cplay", "cvplay", "playforce", "vplayforce", "cplayforce", "cvplayforce"], prefixes=["/", "!", ""])
@@ -77,7 +78,7 @@ async def play_commnd(client, message: Message, _):
         )
         
     except Exception as e:
-        LOGGER("shakky.play").error(f"Error in play_commnd: {e}")
+        LOGGER.error(f"Error in play_commnd: {e}")
         try:
             await mystic.edit_text(f"❌ Error: {str(e)}")
         except:
