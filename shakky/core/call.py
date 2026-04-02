@@ -85,7 +85,16 @@ class Call(PyTgCalls):
             await assistant.join_group_call(chat_id, stream,
                                              stream_type=StreamType().local_stream)
         except AlreadyJoinedError:
-            await assistant.change_stream(chat_id, stream)
+            try:
+                await assistant.change_stream(chat_id, stream)
+            except Exception as e:
+                LOGGER(__name__).error(f"Change stream failed: {e}")
+        except Exception as e:
+            if "No active group call" in str(e):
+                LOGGER(__name__).warning(f"Voice chat not started in {chat_id}. Assistant cannot join.")
+            else:
+                LOGGER(__name__).error(f"Assistant {assistant} failed to join VC: {e}")
+            raise e
 
         # WebApp sync
         if db.get(chat_id):
