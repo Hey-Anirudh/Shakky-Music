@@ -1,0 +1,334 @@
+﻿misc.py:8: from shakky.core.mongo import mongodb
+server.py:90: from shakky.utils.sync import live_rooms, save_rooms, normalize_id, DB_PATH
+server.py:164: from shakky.misc import db
+server.py:165: from shakky.utils.stream.autoclear import auto_clean
+server.py:191: from shakky import app as tg_app
+server.py:214: from shakky.utils.sync import broadcast_state
+server.py:219: from shakky.utils.stream.stream import skip_and_play
+__init__.py:2: from shakky.core.bot import ani
+__init__.py:3: from shakky.core.dir import dirr
+__init__.py:4: from shakky.core.git import git
+__init__.py:5: from shakky.core.userbot import Userbot
+__init__.py:6: from shakky.misc import dbb, heroku
+__main__.py:6: from shakky import LOGGER, app
+__main__.py:7: from shakky.core.call import Nand
+__main__.py:8: from shakky.misc import sudo
+__main__.py:9: from shakky.plugins import ALL_MODULES
+__main__.py:10: from shakky.utils.database import get_banned_users, get_gbanned
+__main__.py:51: from shakky import userbot
+__main__.py:60: from shakky.server import start_webapp_server
+__main__.py:69: from shakky.platforms import YouTube
+__main__.py:87: from shakky import userbot
+call.py:25: from shakky import app
+call.py:26: from shakky.misc import db
+call.py:27: from shakky.utils.database import (
+call.py:34: from shakky.utils.formatters import check_duration, seconds_to_min, speed_converter
+call.py:37: from shakky.utils.webapp import notify_webapp
+userbot.py:4: from shakky import LOGGER
+afkdb.py:2: from shakky.utils.mongo import db
+couples_db.py:1: from shakky.utils.mongo import db
+filtersdb.py:1: from shakky.utils.mongo import db
+notesdb.py:1: from shakky.utils.mongo import db
+Soundcloud.py:5: from shakky.utils.formatters import seconds_to_min
+Telegram.py:9: from shakky import app
+Telegram.py:10: from shakky.utils.formatters import (
+Youtube.py:20: from shakky.utils.groq import get_enhanced_metadata
+Youtube.py:23: from shakky.utils.formatters import seconds_to_min
+auth.py:4: from shakky import app
+auth.py:5: from shakky.utils import extract_user, int_to_alpha
+auth.py:6: from shakky.utils.database import (
+auth.py:12: from shakky.utils.decorators import AdminActual, language
+auth.py:13: from shakky.utils.inline import close_markup
+callback.py:6: from shakky import YouTube, app
+callback.py:7: from shakky.misc import SUDOERS, db
+callback.py:8: from shakky.utils.database import (
+callback.py:20: from shakky.utils.decorators.language import languageCB
+callback.py:21: from shakky.utils.formatters import seconds_to_min
+callback.py:22: from shakky.utils.inline import close_markup, stream_markup, stream_markup_timer
+callback.py:23: from shakky.utils.inline.play import panel_markup_1
+callback.py:24: from shakky.utils.stream.autoclear import auto_clean
+callback.py:25: from shakky.utils.thumbnails import get_thumb
+callback.py:112: from shakky.core.call import ani
+callback.py:113: from shakky.utils.webapp import notify_webapp
+callback.py:114: from shakky.utils.stream.stream import skip_and_play
+callback.py:115: from shakky.utils.formatters import time_to_seconds
+loop.py:4: from shakky import app
+loop.py:5: from shakky.misc import db
+loop.py:6: from shakky.utils.database import get_loop, set_loop
+loop.py:7: from shakky.utils.webapp import notify_webapp
+loop.py:9: from shakky.utils.decorators.admins import AdminRightsCheck
+pause.py:5: from shakky import app
+pause.py:6: from shakky.misc import db
+pause.py:7: from shakky.core.call import ani
+pause.py:8: from shakky.utils.webapp import notify_webapp
+pause.py:10: from shakky.utils.decorators.admins import AdminRightsCheck
+resume.py:5: from shakky import app
+resume.py:6: from shakky.misc import db
+resume.py:7: from shakky.core.call import ani
+resume.py:8: from shakky.utils.webapp import notify_webapp
+resume.py:10: from shakky.utils.decorators.admins import AdminRightsCheck
+seek.py:4: from shakky import app
+seek.py:5: from shakky.core.call import Nand
+seek.py:6: from shakky.misc import db
+seek.py:7: from shakky.utils.database import is_music_playing, music_on
+seek.py:8: from shakky.utils.decorators import AdminRightsCheck
+seek.py:9: from shakky.utils.inline import close_markup
+seek.py:51: from shakky.utils.formatters import seconds_to_min
+shuffle.py:5: from shakky import app
+shuffle.py:6: from shakky.misc import db
+shuffle.py:7: from shakky.utils.webapp import notify_webapp
+shuffle.py:9: from shakky.utils.decorators.admins import AdminRightsCheck
+skip.py:5: from shakky import app
+skip.py:6: from shakky.misc import db
+skip.py:7: from shakky.utils.decorators.admins import AdminRightsCheck
+skip.py:8: from shakky.utils.stream.stream import skip_and_play
+speed.py:4: from shakky import app
+speed.py:5: from shakky.core.call import Nand
+speed.py:6: from shakky.misc import db
+speed.py:7: from shakky.utils.database import is_music_playing, music_on
+speed.py:8: from shakky.utils.decorators import AdminRightsCheck
+speed.py:9: from shakky.utils.inline import close_markup
+stop.py:4: from shakky import app
+stop.py:5: from shakky.misc import db
+stop.py:6: from shakky.core.call import ani
+stop.py:7: from shakky.utils.webapp import notify_webapp
+stop.py:9: from shakky.utils.decorators.admins import AdminRightsCheck
+stop.py:10: from shakky.utils.database import remove_active_chat
+stop.py:28: from shakky.misc import ai_mode
+help.py:7: from shakky import app
+help.py:8: from shakky.utils.inline.help import (
+help.py:14: from shakky.utils.inline.start import private_panel
+help.py:15: from shakky.utils.database import get_lang
+help.py:16: from shakky.utils.decorators.language import LanguageStart, languageCB
+settings.py:11: from shakky import app
+settings.py:12: from shakky.utils.database import (
+settings.py:28: from shakky.utils.decorators.admins import ActualAdminCB
+settings.py:29: from shakky.utils.decorators.language import language, languageCB
+settings.py:30: from shakky.utils.inline.settings import (
+settings.py:36: from shakky.utils.inline.start import private_panel
+start.py:10: from shakky import app
+start.py:11: from shakky.misc import _boot_
+start.py:12: from shakky.plugins.sudo.sudoers import sudoers_list
+start.py:13: from shakky.utils import bot_sys_stats
+start.py:14: from shakky.utils.database import (
+start.py:24: from shakky.utils.decorators.language import LanguageStart
+start.py:25: from shakky.utils.formatters import get_readable_time
+start.py:26: from shakky.utils.inline.start import private_panel, start_panel
+start.py:27: from shakky.utils.inline.help import first_page
+ytsearch.py:4: from shakky import app
+autoleave.py:7: from shakky import app
+autoleave.py:8: from shakky.core.call import ani, autoend
+autoleave.py:9: from shakky.utils.database import get_client, is_active_chat, is_autoend
+autoleave.py:15: from shakky.core.userbot import assistants
+broadcast.py:7: from shakky import app
+broadcast.py:8: from shakky.misc import SUDOERS
+broadcast.py:9: from shakky.utils.database import (
+broadcast.py:16: from shakky.utils.decorators.language import language
+broadcast.py:17: from shakky.utils.formatters import alpha_to_int
+broadcast.py:120: from shakky.core.userbot import assistants
+seeker.py:3: from shakky.misc import db
+seeker.py:4: from shakky.utils.database import get_active_chats, is_music_playing
+bass.py:7: from shakky import app
+channel.py:5: from shakky import app
+channel.py:6: from shakky.utils.database import set_cmode
+channel.py:7: from shakky.utils.decorators.admins import AdminActual
+live.py:3: from shakky import YouTube, app
+live.py:4: from shakky.utils.channelplay import get_channeplayCB
+live.py:5: from shakky.utils.decorators.language import languageCB
+live.py:6: from shakky.utils.stream.stream import stream
+play.py:6: from shakky import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app, LOGGER
+play.py:7: from shakky.utils import seconds_to_min, time_to_seconds
+play.py:8: from shakky.utils.channelplay import get_channeplayCB
+play.py:9: from shakky.utils.decorators.language import languageCB
+play.py:10: from shakky.utils.decorators.play import PlayWrapper
+play.py:11: from shakky.utils.formatters import formats
+play.py:12: from shakky.utils.inline import (
+play.py:19: from shakky.utils.logger import play_logs
+play.py:20: from shakky.utils.stream.stream import stream
+play.py:28: from shakky import YouTube, app, LOGGER
+play.py:29: from shakky.utils.decorators.language import language
+playlist.py:4: from shakky.utils.database import (
+playlist.py:17: from shakky.utils import close_markup
+playlist.py:19: from shakky import Carbon, app
+playlist.py:20: from shakky.utils.decorators.language import language, languageCB
+playlist.py:21: from shakky.utils.inline.playlist import (botplaylist_markup,
+playlist.py:24: from shakky.utils.pastebin import ANNIEBIN
+playlist.py:31: from shakky.utils.stream.stream import stream
+playlist.py:34: from shakky.core.mongo import mongodb
+playlist.py:452: from shakky import YouTube
+playlist.py:564: from shakky import YouTube
+playlist.py:630: from shakky import YouTube
+playlist.py:674: from shakky import YouTube
+playlist.py:690: from shakky import YouTube
+playlist.py:723: from shakky import YouTube
+playlist.py:751: from shakky import YouTube
+playlist.py:765: from shakky import YouTube
+playlist.py:781: from shakky import YouTube
+playmode.py:4: from shakky import app
+playmode.py:5: from shakky.utils.database import get_playmode, get_playtype, is_nonadmin_chat
+playmode.py:6: from shakky.utils.decorators import language
+playmode.py:7: from shakky.utils.inline.settings import playmode_users_markup
+recommend.py:3: from shakky import app, YouTube, LOGGER
+recommend.py:4: from shakky.misc import last_played, ai_mode
+recommend.py:20: from shakky.utils.stream.recommend_logic import start_ai_recommendation
+addsong.py:4: from shakky import app
+addsong.py:5: from shakky.misc import SUDOERS
+addsong.py:6: from shakky.platforms.Youtube import youtube
+addsong.py:7: from shakky.utils.mongo import add_contributor
+autoend.py:4: from shakky import app
+autoend.py:5: from shakky.misc import SUDOERS
+autoend.py:6: from shakky.utils.database import autoend_off, autoend_on
+blchat.py:4: from shakky import app
+blchat.py:5: from shakky.misc import SUDOERS
+blchat.py:6: from shakky.utils.database import blacklist_chat, blacklisted_chats, whitelist_chat
+blchat.py:7: from shakky.utils.decorators.language import language
+block.py:4: from shakky import app
+block.py:5: from shakky.misc import SUDOERS
+block.py:6: from shakky.utils.database import add_gban_user, remove_gban_user
+block.py:7: from shakky.utils.decorators.language import language
+block.py:8: from shakky.utils.extraction import extract_user
+gban.py:29: from shakky import app
+gban.py:30: from shakky.misc import SUDOERS
+gban.py:31: from shakky.utils import get_readable_time
+gban.py:32: from shakky.utils.database import (
+gban.py:40: from shakky.utils.decorators.language import language
+gban.py:41: from shakky.utils.extraction import extract_user
+logger.py:3: from shakky import app
+logger.py:4: from shakky.misc import SUDOERS
+logger.py:5: from shakky.utils.database import add_off, add_on
+logger.py:6: from shakky.utils.decorators.language import language
+maintenance.py:4: from shakky import app
+maintenance.py:5: from shakky.misc import SUDOERS
+maintenance.py:6: from shakky.utils.database import (
+restart.py:13: from shakky import app
+restart.py:14: from shakky.misc import HAPP, SUDOERS, XCB
+restart.py:15: from shakky.utils.database import (
+restart.py:20: from shakky.utils.decorators.language import language
+restart.py:21: from shakky.utils.pastebin import ANNIEBIN
+sudoers.py:5: from shakky import app
+sudoers.py:7: from shakky.misc import SUDOERS
+sudoers.py:8: from shakky.utils.database import add_sudo, remove_sudo
+sudoers.py:9: from shakky.utils.decorators.language import language
+sudoers.py:10: from shakky.utils.extraction import extract_user
+sudoers.py:11: from shakky.utils.inline import close_markup
+active.py:5: from shakky import app
+active.py:6: from shakky.misc import SUDOERS
+active.py:7: from shakky.utils.database import (
+awelcome.py:8: from shakky import app
+awelcome.py:9: from shakky.core.mongo import mongodb
+awelcome.py:10: from shakky.utils.database import get_assistant
+babusona.py:26: from shakky import app
+ban.py:39: from shakky import app
+ban.py:40: from shakky.misc import SUDOERS
+ban.py:41: from shakky.core.mongo import mongodb
+ban.py:42: from shakky.utils.error import capture_err
+ban.py:43: from shakky.utils.keyboard import ikb
+ban.py:44: from shakky.utils.database import save_filter
+ban.py:45: from shakky.utils.functions import (
+ban.py:50: from shakky.utils.permissions import adminsOnly, member_permissions
+ban.py:661: from shakky import app
+ban.py:662: from shakky.misc import SUDOERS
+ban.py:738: from shakky import app
+bots.py:28: from shakky import app
+couple.py:12: from shakky.utils import get_image, get_couple, save_couple
+couple.py:13: from shakky import app
+find.py:4: from shakky import app, YouTube
+language.py:5: from shakky import app
+language.py:6: from shakky.utils.database import get_lang, set_lang
+language.py:7: from shakky.utils.decorators import ActualAdminCB, language, languageCB
+ping.py:6: from shakky import app
+ping.py:7: from shakky.core.call import ani
+ping.py:8: from shakky.utils import bot_sys_stats
+ping.py:9: from shakky.utils.decorators.language import language
+ping.py:10: from shakky.utils.inline import supp_markup
+pplay.py:5: from shakky import app
+pplay.py:6: from shakky.utils.database import get_lang, is_active_chat
+pplay.py:7: from shakky.utils.stream.stream import stream
+pplay.py:8: from shakky.platforms.Youtube import youtube
+pplay.py:9: from shakky.utils.groq import get_groq_playlist
+pplay.py:10: from shakky.utils.stream.queue import put_queue
+queue.py:9: from shakky import app
+queue.py:10: from shakky.misc import db
+queue.py:11: from shakky.utils import ANNIEBIN, get_channeplayCB, seconds_to_min
+queue.py:12: from shakky.utils.database import get_cmode, is_active_chat, is_music_playing
+queue.py:13: from shakky.utils.decorators.language import language, languageCB
+queue.py:14: from shakky.utils.inline import queue_back_markup, queue_markup
+radio.py:4: from shakky import app
+radio.py:5: from shakky.core.call import ani
+radio.py:6: from shakky.misc import db
+radio.py:7: from shakky.utils.database import is_active_chat, get_lang
+radio.py:8: from shakky.utils.stream.stream import stream
+radio.py:9: from shakky.utils.stream.queue import put_queue
+reload.py:9: from shakky import app
+reload.py:10: from shakky.core.call import ani
+reload.py:11: from shakky.misc import db
+reload.py:12: from shakky.utils.database import get_assistant, get_authuser_names, get_cmode
+reload.py:13: from shakky.utils.decorators import ActualAdminCB, AdminActual, language
+reload.py:14: from shakky.utils.formatters import alpha_to_int, get_readable_time
+search.py:7: from shakky import app
+song.py:13: from shakky import app, YouTube
+song.py:16: from shakky.utils.decorators.language import language, languageCB
+song.py:17: from shakky.utils.formatters import convert_bytes
+song.py:18: from shakky.utils.inline.song import song_markup
+speedtest.py:7: from shakky import app
+speedtest.py:8: from shakky.misc import SUDOERS
+speedtest.py:9: from shakky.utils.decorators.language import language
+stats.py:2: from shakky import app
+stats.py:3: from shakky.utils.mongo import get_top_contributors
+alya_ban.py:2: from shakky.utils.admin_check import admin_check
+channelplay.py:1: from shakky import app
+channelplay.py:2: from shakky.utils.database import get_cmode
+database.py:4: from shakky import userbot
+database.py:5: from shakky.core.mongo import mongodb
+database.py:70: from shakky.core.userbot import assistants
+database.py:84: from shakky.core.userbot import assistants
+database.py:111: from shakky.core.userbot import assistants
+database.py:215: from shakky.core.userbot import assistants
+errors.py:6: from shakky import app
+errors.py:7: from shakky.logging import LOGGER
+extraction.py:4: from shakky import app
+filters_func.py:2: from shakky import app
+filters_func.py:4: from shakky.utils.msg_types import button_markdown_parser
+filters_func.py:5: from shakky.utils.notes_func import NoteFillings
+logger.py:3: from shakky import app
+logger.py:4: from shakky.utils.database import is_on_off
+msg_types.py:4: from shakky.mongo.notesdb import isNoteExist
+notes_func.py:6: from shakky import app
+notes_func.py:7: from shakky.mongo.notesdb import GetNote
+notes_func.py:9: from shakky.utils.msg_types import button_markdown_parser
+showbin.py:4: from shakky.mongo.filtersdb import resp
+sync.py:56: from shakky.misc import db
+sys.py:5: from shakky.misc import _boot_
+sys.py:6: from shakky.utils.formatters import get_readable_time
+thumbnails.py:11: from shakky import app
+webapp.py:9: from shakky.misc import db
+yumidb.py:8: from shakky import app
+yumidb.py:11: from shakky.misc import SUDOERS
+admins.py:4: from shakky import app
+admins.py:5: from shakky.misc import SUDOERS, db
+admins.py:6: from shakky.utils.database import (
+language.py:1: from shakky.misc import SUDOERS
+language.py:2: from shakky.utils.database import get_lang, is_maintenance
+play.py:13: from shakky import YouTube, app
+play.py:14: from shakky.misc import SUDOERS
+play.py:15: from shakky.utils.database import (
+play.py:24: from shakky.utils.inline import botplaylist_markup
+help.py:2: from shakky import app
+play.py:5: from shakky.utils.formatters import time_to_seconds
+play.py:6: from shakky import app
+queue.py:2: from shakky import app
+queue.py:3: from shakky.utils.formatters import time_to_seconds
+start.py:4: from shakky import app
+queue.py:4: from shakky.misc import db
+queue.py:5: from shakky.utils.formatters import check_duration, seconds_to_min
+recommend_logic.py:3: from shakky import app, YouTube, LOGGER
+recommend_logic.py:4: from shakky.misc import last_played, db
+recommend_logic.py:5: from shakky.utils.groq import get_song_recommendation
+stream.py:10: from shakky import YouTube, app
+stream.py:11: from shakky.misc import db
+stream.py:12: from shakky.core.call import ani
+stream.py:13: from shakky.utils.webapp import notify_webapp
+stream.py:14: from shakky.utils.formatters import time_to_seconds
+stream.py:15: from shakky.utils.database import add_active_chat, remove_active_chat
+stream.py:196: from shakky.misc import last_played
+stream.py:259: from shakky.misc import last_played, ai_mode

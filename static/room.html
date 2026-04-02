@@ -1,0 +1,1491 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Smash Music | Monochrome Edition</title>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- Using inline SVGs for stability in all environments -->
+
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+    <style>
+        :root {
+            /* Monochrome Design System */
+            --bg-deep: #050505;
+            --bg-main: #0a0a0a;
+            --charcoal: #151515;
+            --accent: #ffffff;
+            --accent-glow: rgba(255, 255, 255, 0.2);
+            --accent-gray: #888888;
+            --light-gray: #aaaaaa;
+            --text-pure: #ffffff;
+            --border: rgba(255, 255, 255, 0.08);
+
+            --safe-top: env(safe-area-inset-top);
+            --safe-bottom: env(safe-area-inset-bottom);
+        }
+
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background: var(--bg-deep);
+            color: var(--text-pure);
+            min-height: 100dvh;
+            width: 100vw;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* AMBIENT BACKGROUND */
+        .ambient {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            overflow: hidden;
+        }
+
+        .blob {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+        }
+
+        .blob1 {
+            width: 75vw;
+            height: 75vw;
+            background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+            top: -10%;
+            left: -10%;
+            animation: b1 25s ease-in-out infinite alternate;
+        }
+
+        .blob2 {
+            width: 60vw;
+            height: 60vw;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, transparent 70%);
+            bottom: -5%;
+            right: -5%;
+            animation: b2 30s ease-in-out infinite alternate;
+        }
+
+        @keyframes b1 {
+            to {
+                transform: translate(35vw, 40vh) scale(1.3);
+            }
+        }
+
+        @keyframes b2 {
+            to {
+                transform: translate(-25vw, -30vh) scale(1.2);
+            }
+        }
+
+        /* LAYOUT */
+        .app {
+            position: relative;
+            z-index: 10;
+            min-height: 100dvh;
+            display: flex;
+            flex-direction: column;
+            padding: calc(1.2rem + var(--safe-top)) 1.6rem calc(1rem + var(--safe-bottom));
+            max-width: 500px;
+            margin: 0 auto;
+            overflow-y: auto;
+        }
+
+        /* HEADER */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 48px;
+            flex-shrink: 0;
+            animation: fadeup 0.4s ease both;
+        }
+
+        .hbtn {
+            width: 42px;
+            height: 42px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            color: var(--light-gray);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .hbtn:hover {
+            background: rgba(255, 255, 255, 0.15);
+            color: var(--accent);
+        }
+
+        .htitle {
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--light-gray);
+            opacity: 0.8;
+        }
+
+        /* SVG ICONS BASE STYLE */
+        svg.icon {
+            width: 24px;
+            height: 24px;
+            fill: none;
+            stroke: currentColor;
+            stroke-width: 2;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+        }
+
+        /* ARTWORK */
+        .art-wrap {
+            display: flex;
+            justify-content: center;
+            flex-shrink: 0;
+            margin: 1.5rem 0 1.8rem;
+            animation: fadeup 0.4s 0.08s ease both;
+        }
+
+        .art-container {
+            width: min(310px, 75vw);
+            aspect-ratio: 1;
+            position: relative;
+        }
+
+        .art-glow {
+            position: absolute;
+            inset: 16px;
+            border-radius: 24px;
+            background-size: cover;
+            background-position: center;
+            filter: blur(32px) saturate(1.8);
+            opacity: 0;
+            z-index: 0;
+            transition: opacity 1s, transform 1s;
+        }
+
+        .art-container.playing .art-glow {
+            opacity: 0.6;
+            transform: scale(1.08);
+        }
+
+        .art-frame {
+            position: relative;
+            z-index: 1;
+            width: 100%;
+            height: 100%;
+            border-radius: 24px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 24px 56px rgba(0, 0, 0, 0.6);
+            background: var(--charcoal);
+            transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+        }
+
+        .art-container.playing .art-frame {
+            transform: scale(1.03) translateY(-5px);
+            border-color: var(--accent);
+        }
+
+        #main-art {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 0.4s;
+            display: block;
+        }
+
+        #main-art.swap {
+            opacity: 0;
+        }
+
+        /* TRACK INFO */
+        .track-meta {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex-shrink: 0;
+            margin-bottom: 1rem;
+            animation: fadeup 0.4s 0.15s ease both;
+        }
+
+        .micon {
+            width: 40px;
+            height: 40px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--accent-gray);
+            cursor: pointer;
+            transition: 0.2s;
+            border-radius: 12px;
+        }
+
+        .micon:hover {
+            color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .micon.liked {
+            color: #ff3377;
+        }
+
+        .tracktext {
+            flex: 1;
+            min-width: 0;
+            text-align: center;
+        }
+
+        #song-title {
+            font-size: 1.45rem;
+            font-weight: 800;
+            letter-spacing: -0.4px;
+            line-height: 1.2;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 4px;
+        }
+
+        #song-artist {
+            font-size: 0.88rem;
+            font-weight: 600;
+            color: var(--accent-gray);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        /* WAVEFORM */
+        .waveform {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 3px;
+            height: 38px;
+            flex-shrink: 0;
+            margin-bottom: 1.25rem;
+            animation: fadeup 0.4s 0.2s ease both;
+        }
+
+        .wbar {
+            width: 3.5px;
+            border-radius: 4px;
+            background: rgba(168, 85, 247, 0.2);
+            animation: wpulse 1.2s ease-in-out infinite alternate;
+            animation-play-state: paused;
+            transition: background 0.4s;
+        }
+
+        .playing-active .wbar {
+            animation-play-state: running;
+            background: var(--accent);
+        }
+
+        @keyframes wpulse {
+            from {
+                height: 6px;
+            }
+
+            to {
+                height: 100%;
+            }
+        }
+
+        /* PROGRESS */
+        .seek-wrap {
+            flex-shrink: 0;
+            margin-bottom: 1.8rem;
+            animation: fadeup 0.4s 0.25s ease both;
+        }
+
+        .prog-track {
+            height: 4px;
+            background: rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            position: relative;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+
+        #progress-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            background: var(--accent);
+            box-shadow: 0 0 12px var(--accent-glow);
+            border-radius: 12px;
+            width: 0%;
+            transition: width 0.3s linear;
+            pointer-events: none;
+        }
+
+        .prog-thumb {
+            position: absolute;
+            top: 50%;
+            left: 0%;
+            width: 13px;
+            height: 13px;
+            background: #fff;
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+            transition: left 0.3s linear;
+            box-shadow: 0 0 10px var(--accent);
+        }
+
+        .time-row {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: var(--light-gray);
+        }
+
+        /* CONTROLS */
+        .ctrl-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+            margin-bottom: 1.8rem;
+            animation: fadeup 0.4s 0.3s ease both;
+        }
+
+        .cbtn {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            transition: all 0.2s;
+        }
+
+        .cbtn.ghost {
+            opacity: 0.45;
+            width: 44px;
+            height: 44px;
+        }
+
+        .cbtn.ghost:hover {
+            opacity: 0.9;
+            color: var(--accent);
+        }
+
+        .cbtn.mid {
+            opacity: 0.75;
+            width: 50px;
+            height: 50px;
+        }
+
+        .cbtn.mid:hover {
+            opacity: 1;
+            transform: scale(1.1);
+            color: var(--accent);
+        }
+
+        .cbtn:active {
+            transform: scale(0.85) !important;
+        }
+
+        .playbtn {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            background: #ffffff !important;
+            border: 2px solid rgba(255, 255, 255, 0.1) !important;
+            box-shadow: 0 10px 30px rgba(255, 255, 255, 0.15);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            flex-shrink: 0;
+            position: relative;
+        }
+
+        .playbtn:hover {
+            transform: scale(1.08);
+            box-shadow: 0 12px 40px rgba(255, 255, 255, 0.25);
+        }
+
+        /* HARDCORE VISIBILITY FIX */
+        .playbtn svg, .playbtn svg *, #play-icon, #play-path {
+            width: 32px !important;
+            height: 32px !important;
+            fill: #000000 !important;
+            stroke: #000000 !important;
+            stroke-width: 0.5px !important;
+            opacity: 1 !important;
+            display: block !important;
+            visibility: visible !important;
+        }
+
+        .playbtn svg.pause-icon {
+            width: 28px !important;
+            height: 28px !important;
+        }
+
+        /* LISTENERS */
+        .listeners-row {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            animation: fadeup 0.4s 0.35s ease both;
+        }
+
+        .listeners-pill {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: rgba(168, 85, 247, 0.08);
+            border: 1px solid var(--border);
+            border-radius: 100px;
+            padding: 6px 16px 6px 6px;
+            cursor: pointer;
+            transition: 0.3s;
+        }
+
+        .listeners-pill:hover {
+            background: rgba(168, 85, 247, 0.15);
+            border-color: var(--accent);
+        }
+
+        .avatar-pile {
+            display: flex;
+            align-items: center;
+        }
+
+        .av,
+        .avinit {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            border: 2px solid var(--bg-deep);
+            margin-left: -10px;
+            flex-shrink: 0;
+            transition: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        .av:first-child,
+        .avinit:first-child {
+            margin-left: 0;
+        }
+
+        .av {
+            object-fit: cover;
+            background: var(--charcoal);
+        }
+
+        .avinit {
+            background: var(--accent-gray);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.62rem;
+            font-weight: 800;
+            color: #fff;
+        }
+
+        .av:hover,
+        .avinit:hover {
+            transform: translateY(-5px) scale(1.15);
+            z-index: 20;
+        }
+
+        .vdot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+            flex-shrink: 0;
+            box-shadow: 0 0 0 0 var(--accent-glow);
+            animation: vdotpulse 2s ease-in-out infinite;
+        }
+
+        @keyframes vdotpulse {
+
+            0%,
+            100% {
+                box-shadow: 0 0 0 0 var(--accent-glow);
+            }
+
+            50% {
+                box-shadow: 0 0 0 6px rgba(168, 85, 247, 0);
+            }
+        }
+
+        #vibing-count {
+            font-size: 0.75rem;
+            font-weight: 700;
+            color: var(--light-gray);
+        }
+
+        /* QUEUE SHEET */
+        .qsheet {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            height: 82dvh;
+            background: var(--bg-main);
+            border-radius: 30px 30px 0 0;
+            border-top: 1px solid var(--border);
+            z-index: 200;
+            transform: translateY(100%);
+            transition: transform 0.5s cubic-bezier(0.19, 1, 0.22, 1);
+            display: flex;
+            flex-direction: column;
+            padding: 0 1.6rem;
+            box-shadow: 0 -20px 60px rgba(0, 0, 0, 0.7);
+        }
+
+        .qsheet.open {
+            transform: translateY(0);
+        }
+
+        .qhandle-row {
+            display: flex;
+            justify-content: center;
+            padding: 14px 0 0;
+            flex-shrink: 0;
+            cursor: pointer;
+        }
+
+        .qhandle {
+            width: 40px;
+            height: 5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+
+        .qheader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 0 12px;
+            flex-shrink: 0;
+        }
+
+        .qtitle {
+            font-size: 1.15rem;
+            font-weight: 800;
+            border-bottom: 2px solid var(--accent);
+            padding-bottom: 4px;
+        }
+
+        .qclose {
+            width: 32px;
+            height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 10px;
+            color: var(--light-gray);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .qclose:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+        }
+
+        #queue-list {
+            flex: 1;
+            overflow-y: auto;
+            padding-bottom: 30px;
+            scrollbar-width: none;
+        }
+
+        #queue-list::-webkit-scrollbar {
+            display: none;
+        }
+
+        .qitem {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 10px 0;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-radius: 16px;
+        }
+
+        .qitem:hover {
+            background: rgba(168, 85, 247, 0.05);
+            padding-left: 10px;
+            padding-right: 10px;
+            margin: 0 -10px;
+        }
+
+        .qart {
+            width: 48px;
+            height: 48px;
+            border-radius: 12px;
+            object-fit: cover;
+            flex-shrink: 0;
+            background: var(--charcoal);
+        }
+
+        .qinfo {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .qtname {
+            font-size: 0.9rem;
+            font-weight: 700;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            margin-bottom: 3px;
+        }
+
+        .qtsub {
+            font-size: 0.75rem;
+            color: var(--accent-gray);
+            font-weight: 500;
+        }
+
+        .qitem.active .qtname {
+            color: var(--accent);
+        }
+
+        .qwaves {
+            display: none;
+            align-items: flex-end;
+            gap: 2.5px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .qitem.active .qwaves {
+            display: flex;
+        }
+
+        .qwaves span {
+            width: 3px;
+            border-radius: 2px;
+            background: var(--accent);
+            animation: qw .8s infinite alternate;
+        }
+
+        @keyframes qw {
+            from {
+                height: 4px;
+            }
+
+            to {
+                height: 16px;
+            }
+        }
+
+        /* USER MODAL & INVITE */
+        .modal-bg {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(16px);
+            z-index: 400;
+            display: none;
+            align-items: flex-end;
+            justify-content: center;
+        }
+
+        .modal-bg.open {
+            display: flex;
+        }
+
+        .modal-sheet {
+            width: 100%;
+            max-width: 500px;
+            background: var(--bg-main);
+            border-radius: 30px 30px 0 0;
+            border-top: 1px solid var(--border);
+            padding: 0 1.6rem calc(1.5rem + var(--safe-bottom));
+            animation: sheetup 0.4s cubic-bezier(0.19, 1, 0.22, 1);
+            display: flex;
+            flex-direction: column;
+            max-height: 85dvh;
+        }
+
+        .mheader {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 0 8px;
+            flex-shrink: 0;
+        }
+
+        .mhtitle {
+            font-size: 1.15rem;
+            font-weight: 800;
+            color: var(--accent);
+        }
+
+        .invite-section {
+            display: flex;
+            gap: 10px;
+            margin: 12px 0 16px;
+            flex-shrink: 0;
+            background: rgba(168, 85, 247, 0.05);
+            padding: 12px;
+            border-radius: 16px;
+            border: 1px solid var(--border);
+        }
+
+        .invite-input {
+            flex: 1;
+            background: var(--charcoal);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: white;
+            padding: 10px 14px;
+            border-radius: 12px;
+            font-weight: 500;
+            font-size: 0.9rem;
+            outline: none;
+            transition: 0.2s;
+        }
+
+        .invite-input:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        .invite-btn {
+            background: var(--accent);
+            color: white;
+            border: none;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0 18px;
+            border-radius: 12px;
+            cursor: pointer;
+            transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .invite-btn:hover {
+            background: #9b4de0;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px var(--accent-glow);
+        }
+
+        .invite-btn:active {
+            transform: scale(0.95);
+        }
+
+        #full-user-list {
+            flex: 1;
+            overflow-y: auto;
+            scrollbar-width: none;
+            min-height: 100px;
+            padding-bottom: 20px;
+        }
+
+        .urow {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            padding: 12px 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .uname {
+            font-weight: 700;
+            font-size: 0.95rem;
+            flex: 1;
+        }
+
+        .ubadge {
+            font-size: 0.65rem;
+            font-weight: 800;
+            color: var(--accent);
+            background: rgba(255, 255, 255, 0.1);
+            padding: 4px 10px;
+            border-radius: 100px;
+        }
+
+        /* START OVERLAY */
+        .start-ov {
+            position: fixed;
+            inset: 0;
+            z-index: 1000;
+            background: var(--bg-deep);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 0.5s;
+        }
+
+        .start-card {
+            text-align: center;
+            padding: 2.5rem;
+            max-width: 340px;
+            width: 100%;
+        }
+
+        .start-logo {
+            width: 72px;
+            height: 72px;
+            border-radius: 22px;
+            background: var(--accent);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 1.5rem;
+            box-shadow: 0 16px 40px var(--accent-glow);
+        }
+
+        .start-h {
+            font-size: 1.85rem;
+            font-weight: 800;
+            letter-spacing: -0.5px;
+            margin-bottom: 0.6rem;
+        }
+
+        .start-p {
+            font-size: 0.9rem;
+            color: var(--accent-gray);
+            line-height: 1.6;
+            margin-bottom: 2.5rem;
+        }
+
+        .start-btn {
+            background: #fff;
+            color: #000;
+            border: none;
+            width: 100%;
+            padding: 1.1rem;
+            border-radius: 18px;
+            font-weight: 800;
+            font-size: 1rem;
+            letter-spacing: 0.2px;
+            cursor: pointer;
+            box-shadow: 0 10px 30px rgba(255, 255, 255, 0.1);
+            transition: 0.3s;
+        }
+
+        .start-btn:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 15px 40px rgba(255, 255, 255, 0.2);
+        }
+
+        /* TOAST */
+        .toast {
+            position: fixed;
+            bottom: 100px;
+            left: 50%;
+            transform: translateX(-50%) translateY(15px);
+            background: #fff;
+            color: #000;
+            padding: 10px 22px;
+            border-radius: 100px;
+            font-weight: 800;
+            font-size: 0.8rem;
+            z-index: 3000;
+            opacity: 0;
+            pointer-events: none;
+            transition: all 0.25s;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        @keyframes fadeup {
+            from {
+                opacity: 0;
+                transform: translateY(18px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @media(min-width: 520px) {
+            .app {
+                border-left: 1px solid var(--border);
+                border-right: 1px solid var(--border);
+                background: var(--bg-main);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <canvas id="snow-canvas" style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; opacity:0.6;"></canvas>
+
+    <div class="ambient">
+        <div class="blob blob1"></div>
+        <div class="blob blob2"></div>
+    </div>
+
+    <audio id="audio-engine" preload="auto" crossorigin="anonymous"></audio>
+
+    <!-- START OVERLAY -->
+    <div id="sync-overlay" class="start-ov">
+        <div class="start-card">
+            <div class="start-logo">
+                <svg class="icon" style="fill:white; stroke:none; width:32px; height:32px;">
+                    <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+                </svg>
+            </div>
+            <h1 class="start-h">Smash Music</h1>
+            <p class="start-p">Premium Purple Experience.<br>Tap to sync live with your room.</p>
+            <button class="start-btn" onclick="initializeSession()">START LISTENING</button>
+        </div>
+    </div>
+
+    <!-- MAIN APP -->
+    <div class="app">
+
+        <!-- HEADER -->
+        <div class="header">
+            <div class="hbtn" onclick="openQueue()">
+                <svg class="icon">
+                    <path d="M6 9l6 6 6-6" />
+                </svg>
+            </div>
+            <span class="htitle">Now Playing</span>
+            <div class="hbtn" onclick="openQueue()">
+                <svg class="icon">
+                    <path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" />
+                </svg>
+            </div>
+        </div>
+
+        <!-- ARTWORK -->
+        <div class="art-wrap">
+            <div class="art-container" id="art-container">
+                <div id="art-shadow" class="art-glow"></div>
+                <div class="art-frame">
+                    <img id="main-art" src="https://files.catbox.moe/5ni0on.jpg" alt="Art">
+                </div>
+            </div>
+        </div>
+
+        <!-- METADATA -->
+        <div class="track-meta">
+            <div class="micon" id="like-btn" onclick="toggleLike()">
+                <svg id="like-icon" class="icon">
+                    <path
+                        d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z" />
+                </svg>
+            </div>
+            <div class="tracktext">
+                <div id="song-title">Not Playing</div>
+                <div id="song-artist">Call /play in Telegram</div>
+            </div>
+            <div class="micon" onclick="openQueue()">
+                <svg class="icon">
+                    <circle cx="12" cy="12" r="1" />
+                    <circle cx="19" cy="12" r="1" />
+                    <circle cx="5" cy="12" r="1" />
+                </svg>
+            </div>
+        </div>
+
+        <!-- WAVEFORM -->
+        <div class="waveform" id="waveform"></div>
+
+        <!-- PROGRESS -->
+        <div class="seek-wrap">
+            <div class="prog-track" id="progress-track" onclick="seekPlayback(event)">
+                <div id="progress-fill"></div>
+                <div class="prog-thumb" id="prog-thumb"></div>
+            </div>
+            <div class="time-row">
+                <span id="time-curr">0:00</span>
+                <span id="time-total">0:00</span>
+            </div>
+        </div>
+
+        <!-- CONTROLS -->
+        <div class="ctrl-row">
+            <button class="cbtn ghost" onclick="sendCommand('shuffle')">
+                <svg class="icon">
+                    <path d="M16 3h5v5M4 20L21 3M21 16v5h-5M15 15l6 6M4 4l5 5" />
+                </svg>
+            </button>
+            <button class="cbtn mid" onclick="sendCommand('prev')">
+                <svg class="icon">
+                    <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5" />
+                </svg>
+            </button>
+
+            <div id="play-pause-btn" class="playbtn" onclick="togglePlayback()" style="background:#fff;">
+                <svg id="play-icon" viewBox="0 0 24 24" style="width:32px; height:32px; fill:#000;">
+                    <path id="play-path" d="M5 3l14 9-14 9V3z" style="fill:#000;" />
+                </svg>
+            </div>
+
+            <button class="cbtn mid" onclick="sendCommand('skip')">
+                <svg class="icon">
+                    <path d="M13 17l5-5-5-5M6 17l5-5-5-5" />
+                </svg>
+            </button>
+            <button class="cbtn ghost" onclick="sendCommand('loop')">
+                <svg class="icon">
+                    <path d="M17 1l4 4-4 4M3 11V9a4 4 0 014-4h14M7 23l-4-4 4-4M21 13v2a4 4 0 01-4 4H3" />
+                </svg>
+            </button>
+        </div>
+
+        <!-- LISTENERS PILL -->
+        <div class="listeners-row">
+            <div class="listeners-pill" onclick="toggleListeners(true)">
+                <div id="pfp-pile" class="avatar-pile"></div>
+                <div class="vdot"></div>
+                <span id="vibing-count">0 Vibing</span>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- QUEUE SHEET -->
+    <div id="queue-sheet" class="qsheet">
+        <div class="qhandle-row" onclick="closeQueue()">
+            <div class="qhandle"></div>
+        </div>
+        <div class="qheader">
+            <span class="qtitle">Queue List</span>
+            <div class="qclose" onclick="closeQueue()"><svg class="icon">
+                    <path d="M18 6L6 18M6 6l12 12" />
+                </svg></div>
+        </div>
+        <div id="queue-list">
+            <p style="text-align:center;padding:4rem;opacity:.3;font-size:.9rem;">Queue is empty</p>
+        </div>
+    </div>
+
+    <!-- MODAL LISTENERS -->
+    <div id="listeners-modal" class="modal-bg" onclick="toggleListeners(false)">
+        <div class="modal-sheet" onclick="event.stopPropagation()">
+            <div class="qhandle-row" onclick="toggleListeners(false)">
+                <div class="qhandle"></div>
+            </div>
+            <div class="mheader">
+                <span class="mhtitle">Invite Friends</span>
+                <div class="mclose" onclick="toggleListeners(false)"><svg class="icon">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                    </svg></div>
+            </div>
+
+            <!-- INVITE FRIEND SECTION -->
+            <div class="invite-section" id="invite-section-list"
+                style="max-height: 250px; overflow-y: auto; padding-right: 5px; margin-bottom: 20px;">
+                <div style="text-align:center; padding: 20px; font-size:12px; opacity:0.6;">Loading group members...
+                </div>
+            </div>
+
+            <div class="mheader" style="border-top: 1px solid var(--border); padding-top: 15px; margin-bottom: 10px;">
+                <span class="mhtitle">Current Listeners</span>
+            </div>
+
+            <div id="full-user-list"></div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        /* ── Dynamic Waveform Generation ── */
+        (function () {
+            const wf = document.getElementById('waveform');
+            const bars = 36;
+            for (let i = 0; i < bars; i++) {
+                const b = document.createElement('div');
+                b.className = 'wbar';
+                const h = Math.floor(Math.random() * 24) + 14;
+                b.style.cssText = `height:${h}px;animation-delay:${(i * 0.04).toFixed(2)}s;animation-duration:${(0.6 + i % 5 * 0.12).toFixed(2)}s`;
+                wf.appendChild(b);
+            }
+        })();
+
+        /* ── Core Logic ── */
+        const audio = document.getElementById('audio-engine');
+        let socket = null, lastState = null, serverOffset = 0, mediaUrl = null, durationSec = 0, liked = false;
+
+        // Gapless Autoplay Trigger
+        audio.addEventListener('ended', () => {
+            if (lastState && lastState.is_playing) {
+                sendCommand('end_skip');
+            }
+        });
+
+        function getRoomId() {
+            const tg = window.Telegram?.WebApp;
+            if (tg?.initDataUnsafe?.start_param) return tg.initDataUnsafe.start_param;
+            const p = new URLSearchParams(window.location.search);
+            return p.get('startapp') || p.get('chat_id') || 'global';
+        }
+        const roomId = getRoomId();
+
+        /* ── Init ── */
+        function initializeSession() {
+            const tg = window.Telegram?.WebApp;
+            if (tg) { tg.ready(); tg.expand(); }
+            audio.play().then(() => audio.pause()).catch(() => { });
+
+            document.getElementById('sync-overlay').style.opacity = '0';
+            setTimeout(() => document.getElementById('sync-overlay').remove(), 500);
+
+            socket = io(window.location.origin);
+            const user = tg?.initDataUnsafe?.user;
+            const joinInfo = {
+                id: user?.id || 'anon_' + Math.random().toString(36).substr(2, 6),
+                name: user ? (user.first_name + (user.last_name ? ' ' + user.last_name : '')) : 'Guest',
+                photo: user?.photo_url
+            };
+
+            socket.on('connect', () => socket.emit('join_room', { chat_id: roomId, user: joinInfo }));
+            socket.on('room_update', handleUpdate);
+            socket.on('room_users', updateListeners);
+
+            fetch(`/api/state/${roomId}`).then(r => r.json()).then(d => { if (d.state) handleUpdate(d.state); });
+        }
+
+        /* ── Sync Engine ── */
+        function handleUpdate(state) {
+            lastState = state;
+            if (state.server_time) serverOffset = (Date.now() / 1000) - state.server_time;
+            updateUI(state);
+
+            if (state.action === 'stop' || (!state.current && !state.is_playing)) {
+                audio.pause(); audio.src = ''; mediaUrl = null; return;
+            }
+
+            if (!state.current) return;
+            const newUrl = state.current.media_url;
+            if (newUrl && newUrl !== mediaUrl) {
+                mediaUrl = newUrl; audio.src = newUrl; audio.load();
+                audio.addEventListener('canplay', () => sync(state), { once: true });
+            } else if (newUrl) {
+                sync(state);
+            }
+        }
+
+        function sync(state) {
+            const now = (Date.now() / 1000) - serverOffset;
+            const startAt = state.start_time || 0;
+            if (!startAt && state.is_playing) return;
+
+            const target = state.is_playing ? (now - startAt) : (state.elapsed || 0);
+            const drift = Math.abs(audio.currentTime - target);
+
+            if (state.is_playing) {
+                if (drift > 2) {
+                    audio.currentTime = Math.max(0, target);
+                } else if (drift > 0.4) {
+                    audio.playbackRate = target > audio.currentTime ? 1.04 : 0.96;
+                } else {
+                    audio.playbackRate = 1.0;
+                }
+                if (audio.paused) audio.play().catch(() => { });
+            } else {
+                if (!audio.paused) audio.pause();
+                if (drift > 1) audio.currentTime = Math.max(0, target);
+            }
+        }
+
+        /* ── Render ── */
+        function updateUI(state) {
+            const cur = state.current;
+            const container = document.getElementById('art-container');
+            const artEl = document.getElementById('main-art');
+            const playIcon = document.getElementById('play-icon');
+            const playPath = document.getElementById('play-path');
+            const appEl = document.querySelector('.app');
+
+            if (!cur) {
+                document.getElementById('song-title').innerText = 'Not Playing';
+                document.getElementById('song-artist').innerText = 'Call /play in Telegram';
+                playPath.setAttribute('d', 'M5 3l14 9-14 9V3z');
+                container.classList.remove('playing');
+                appEl?.classList.remove('playing-active');
+                return;
+            }
+
+            const thumb = cur.thumbnail || 'https://files.catbox.moe/5ni0on.jpg';
+            if (artEl.getAttribute('src') !== thumb) {
+                artEl.classList.add('swap');
+                setTimeout(() => { artEl.src = thumb; artEl.onload = () => artEl.classList.remove('swap'); }, 200);
+            }
+
+            document.getElementById('art-shadow').style.backgroundImage = `url('${thumb}')`;
+            document.getElementById('song-title').innerText = cur.title;
+            document.getElementById('song-artist').innerText = 'Added by ' + cur.by;
+            document.getElementById('time-total').innerText = cur.duration;
+            durationSec = parseTimeString(cur.duration);
+
+            if (state.is_playing) {
+                playPath.setAttribute('d', 'M6 4h4v16H6V4zm8 0h4v16h-4V4z'); // Pause
+                container.classList.add('playing');
+                appEl?.classList.add('playing-active');
+            } else {
+                playPath.setAttribute('d', 'M5 3l14 9-14 9V3z'); // Play
+                container.classList.remove('playing');
+                appEl?.classList.remove('playing-active');
+            }
+
+            const qList = document.getElementById('queue-list');
+            if (state.queue && state.queue.length > 0) {
+                qList.innerHTML = state.queue.map((q, i) => `
+            <div class="qitem ${i === 0 ? 'active' : ''}">
+                <img class="qart" src="${q.thumbnail || 'https://files.catbox.moe/5ni0on.jpg'}" loading="lazy">
+                <div class="qinfo">
+                    <div class="qtname">${q.title}</div>
+                    <div class="qtsub">${q.duration} · by ${q.by}</div>
+                </div>
+                ${i === 0 ? '<div class="qwaves"><span></span><span></span><span></span></div>' : ''}
+            </div>`
+                ).join('');
+            } else {
+                qList.innerHTML = '<p style="text-align:center;padding:4rem;opacity:.3;font-size:.9rem;">Queue is empty</p>';
+            }
+        }
+
+        /* ── Users ── */
+        function updateListeners(data) {
+            const users = data.users || [];
+            const count = users.length;
+            document.getElementById('vibing-count').innerText = count + ' Vibing';
+
+            const pile = document.getElementById('pfp-pile');
+            pile.innerHTML = users.slice(0, 5).map(u =>
+                u.photo
+                    ? `<img src="${u.photo}" class="av" title="${u.name}">`
+                    : `<div class="avinit" title="${u.name}">${u.name.charAt(0).toUpperCase()}</div>`
+            ).join('') + (count > 5 ? `<div class="avinit">+${count - 5}</div>` : '');
+
+            document.getElementById('full-user-list').innerHTML = users.map(u => `
+        <div class="urow">
+            ${u.photo ? `<img src="${u.photo}" style="width:38px; height:38px; border-radius:50%; object-fit:cover;">` : `<div style="width:38px; height:38px; border-radius:50%; background:var(--charcoal); display:flex; align-items:center; justify-content:center; border:1px solid var(--border); font-weight:bold;">${u.name.charAt(0).toUpperCase()}</div>`}
+            <span class="uname">${u.name}</span>
+            <span class="ubadge">Listening</span>
+        </div>`).join('');
+        }
+
+        /* ── Loop ── */
+        setInterval(() => {
+            let p = 0, c = 0;
+            if (!audio.src || audio.readyState < 2) {
+                if (lastState?.is_playing && lastState?.start_time) {
+                    c = ((Date.now() / 1000) - serverOffset) - lastState.start_time;
+                    p = (c / (durationSec || 1)) * 100;
+                }
+            } else {
+                c = audio.currentTime;
+                p = (c / (audio.duration || durationSec || 1)) * 100;
+            }
+            p = Math.min(100, Math.max(0, p));
+            document.getElementById('progress-fill').style.width = p + '%';
+            document.getElementById('prog-thumb').style.left = p + '%';
+            document.getElementById('time-curr').innerText = formatTimeString(c);
+        }, 250);
+
+        /* ── Utils ── */
+        function parseTimeString(s) {
+            const parts = String(s).split(':').map(Number);
+            if (parts.length === 2) return parts[0] * 60 + parts[1];
+            if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+            return parts[0] || 0;
+        }
+        function formatTimeString(s) {
+            s = Math.max(0, Math.floor(s));
+            return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+        }
+
+        function togglePlayback() { if (lastState) sendCommand(lastState.is_playing ? 'pause' : 'resume'); }
+
+        function sendCommand(cmd, val = null) {
+            if (socket) {
+                socket.emit('client_command', { chat_id: roomId, command: cmd, value: val });
+                showToast(cmd.toUpperCase() + ' SENT');
+            }
+        }
+
+        function seekPlayback(e) {
+            if (!lastState?.current) return;
+            const r = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - r.left) / r.width;
+            sendCommand('seek', Math.floor(pct * durationSec));
+        }
+
+        async function sendInviteAPI(targetId, targetName) {
+            const tg = window.Telegram?.WebApp;
+            const user = tg?.initDataUnsafe?.user;
+            const inviterId = user?.id || 0;
+            const inviterName = user ? (user.first_name || 'Guest') : 'Guest';
+
+            showToast(`Sending invite to ${targetName}...`);
+            try {
+                const res = await fetch('/api/invite', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        chat_id: roomId.toString(),
+                        inviter_id: inviterId,
+                        inviter_name: inviterName,
+                        target_id: parseInt(targetId),
+                        target_name: targetName
+                    })
+                });
+                const data = await res.json();
+                if (data.status === 'ok') {
+                    showToast('✅ Invite sent into group!');
+                } else {
+                    showToast('⚠️ Failed to send invite');
+                }
+            } catch (e) {
+                showToast('⚠️ Error sending invite');
+            }
+        }
+
+        async function fetchGroupMembers() {
+            try {
+                const res = await fetch(`/api/members/${roomId}`);
+                const data = await res.json();
+                const container = document.getElementById('invite-section-list');
+                if (data.status === 'ok' && data.members.length > 0) {
+                    container.innerHTML = data.members.map(m => `
+                <div class="urow" style="margin-bottom:12px; padding:8px; border-radius:12px; background:rgba(255,255,255,0.03);">
+                    <div style="width:38px; height:38px; border-radius:50%; background:var(--charcoal); display:flex; align-items:center; justify-content:center; border:1px solid var(--border); font-weight:bold;">${m.name.charAt(0).toUpperCase()}</div>
+                    <div style="flex:1; margin-left:12px;">
+                        <span class="uname" style="display:block; font-size:14px;">${m.name}</span>
+                        ${m.username ? `<span style="font-size:11px; opacity:0.5; display:block;">@${m.username}</span>` : ''}
+                    </div>
+                    <button class="invite-btn" onclick="sendInviteAPI('${m.id}', '${m.name.replace(/'/g, "\\'")}')" style="margin-top:0; padding:6px 14px; font-size:12px; border-radius:12px; height:auto;">
+                        Invite
+                    </button>
+                </div>
+            `).join('');
+                } else {
+                    container.innerHTML = `<div style="text-align:center; padding:20px; opacity:0.5; font-size:12px;">Could not load members.</div>`;
+                }
+            } catch (e) {
+                document.getElementById('invite-section-list').innerHTML = `<div style="text-align:center; padding:20px; opacity:0.5; font-size:12px;">Error loading members.</div>`;
+            }
+        }
+
+        let membersFetched = false;
+        function toggleListeners(show) {
+            document.getElementById('listeners-modal').classList.toggle('open', show);
+            if (show && !membersFetched) {
+                fetchGroupMembers();
+                membersFetched = true;
+            }
+        }
+
+        function showToast(msg) {
+            const t = document.getElementById('toast');
+            t.innerText = msg;
+            t.classList.add('show');
+            setTimeout(() => t.classList.remove('show'), 2000);
+        }
+
+        function toggleLike() {
+            liked = !liked;
+            const icon = document.getElementById('like-icon');
+            if (liked) {
+                icon.style.fill = '#ff3377';
+                icon.style.stroke = 'none';
+                document.getElementById('like-btn').classList.add('liked');
+            } else {
+                icon.style.fill = 'none';
+                icon.style.stroke = 'currentColor';
+                document.getElementById('like-btn').classList.remove('liked');
+            }
+        }
+
+        function openQueue() { document.getElementById('queue-sheet').classList.add('open'); }
+        function closeQueue() { document.getElementById('queue-sheet').classList.remove('open'); }
+        function toggleListeners(show) { document.getElementById('listeners-modal').classList.toggle('open', show); }
+
+        /* ── Snowflake Engine (Wow Factor) ── */
+        (function() {
+            const canvas = document.getElementById('snow-canvas');
+            const ctx = canvas.getContext('2d');
+            let w, h, particles = [];
+
+            function resize() {
+                w = canvas.width = window.innerWidth;
+                h = canvas.height = window.innerHeight;
+            }
+            window.addEventListener('resize', resize);
+            resize();
+
+            class Particle {
+                constructor() {
+                    this.x = Math.random() * w;
+                    this.y = Math.random() * h;
+                    this.size = Math.random() * 2 + 1;
+                    this.speedX = Math.random() * 0.5 - 0.25;
+                    this.speedY = Math.random() * 1 + 0.5;
+                    this.opacity = Math.random() * 0.5 + 0.3;
+                }
+                update() {
+                    this.y += this.speedY;
+                    this.x += this.speedX;
+                    if (this.y > h) {
+                        this.y = -10;
+                        this.x = Math.random() * w;
+                    }
+                }
+                draw() {
+                    ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            for(let i=0; i<80; i++) particles.push(new Particle());
+
+            function animate() {
+                ctx.clearRect(0,0,w,h);
+                particles.forEach(p => { p.update(); p.draw(); });
+                requestAnimationFrame(animate);
+            }
+            animate();
+        })();
+    </script>
+
+</body>
+
+</html>

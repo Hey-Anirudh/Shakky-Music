@@ -1,0 +1,240 @@
+import random
+import string
+from pyrogram import filters
+from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
+import config
+from shakky import Apple, Resso, SoundCloud, Spotify, Telegram, YouTube, app, LOGGER
+from shakky.utils import seconds_to_min, time_to_seconds
+from shakky.utils.channelplay import get_channeplayCB
+from shakky.utils.decorators.language import languageCB
+from shakky.utils.decorators.play import PlayWrapper
+from shakky.utils.formatters import formats
+from shakky.utils.inline import (
+    botplaylist_markup,
+    livestream_markup,
+    playlist_markup,
+    slider_markup,
+    track_markup,
+)
+from shakky.utils.logger import play_logs
+from shakky.utils.stream.stream import stream
+from config import BANNED_USERS, lyrical, AYU
+
+
+import random
+from pyrogram import filters
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
+import config
+from shakky import YouTube, app, LOGGER
+from shakky.utils.decorators.language import language
+
+@app.on_message(
+    filters.command(["play", "vplay", "cplay", "cvplay", "playforce", "vplayforce", "cplayforce", "cvplayforce"], prefixes=["/", "!", ""])
+    & filters.group
+    & ~BANNED_USERS
+)
+@language
+async def play_commnd(client, message: Message, _):
+    """
+    Entry point for playback (Step 1 & 2)
+    1. Send loading message
+    2. Search YouTube
+    3. Call stream engine
+    """
+    if len(message.command) < 2:
+        return await message.reply_text("➲ **Please provide a song name or link to play.**")
+
+    query = message.text.split(None, 1)[1]
+    
+    # Step 1: Send Loading Message
+    mystic = await message.reply_text(f"🔍 Searching for: **{query}**...")
+    
+    try:
+        # Step 1: YouTube Search (metadata only)
+        result = await YouTube.search(query)
+        if not result:
+            return await mystic.edit_text("❌ No results found on YouTube.")
+            
+        # Step 2: Handoff to stream engine
+        user_id = message.from_user.id
+        user_name = message.from_user.first_name
+        chat_id = message.chat.id
+        
+        # Check if it's a forceplay command
+        forceplay = "force" in message.command[0]
+        
+        await stream(
+            _,
+            mystic,
+            user_id,
+            result,
+            chat_id,
+            user_name,
+            chat_id,
+            streamtype="youtube",
+            forceplay=forceplay,
+            raw_query=query
+        )
+        
+    except Exception as e:
+        LOGGER("shakky.play").error(f"Error in play_commnd: {e}")
+        try:
+            await mystic.edit_text(f"❌ Error: {str(e)}")
+        except:
+            await message.reply_text(f"❌ Error: {str(e)}")
+
+# Anonymous Admin handler
+@app.on_callback_query(filters.regex("AnonymousAdmin") & ~BANNED_USERS)
+async def Anonymous_check(client, CallbackQuery):
+    try:
+        await CallbackQuery.answer(
+            "» Please use a real account to manage playback.",
+            show_alert=True,
+        )
+    except:
+        pass
+
+
+@app.on_callback_query(filters.regex("aniPlaylists") & ~BANNED_USERS)
+@languageCB
+async def play_playlists_command(client, CallbackQuery, _):
+    callback_data = CallbackQuery.data.strip()
+    callback_request = callback_data.split(None, 1)[1]
+    (
+        videoid,
+        user_id,
+        ptype,
+        mode,
+        cplay,
+        fplay,
+    ) = callback_request.split("|")
+    if CallbackQuery.from_user.id != int(user_id):
+        try:
+            return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
+        except:
+            return
+    try:
+        chat_id, channel = await get_channeplayCB(_, cplay, CallbackQuery)
+    except:
+        return
+    user_name = CallbackQuery.from_user.first_name
+    await CallbackQuery.message.delete()
+    try:
+        await CallbackQuery.answer()
+    except:
+        pass
+    mystic = await CallbackQuery.message.reply_text(
+        _["play_2"].format(channel) if channel else random.choice(AYU)
+    )
+    videoid = lyrical.get(videoid)
+    video = True if mode == "v" else None
+    ffplay = True if fplay == "f" else None
+    spotify = True
+    if ptype == "yt":
+        spotify = False
+        try:
+            result = await YouTube.playlist(
+                videoid,
+                config.PLAYLIST_FETCH_LIMIT,
+                CallbackQuery.from_user.id,
+                True,
+            )
+        except:
+            return await mystic.edit_text(_["play_3"])
+    if ptype == "spplay":
+        try:
+            result, spotify_id = await Spotify.playlist(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+    if ptype == "spalbum":
+        try:
+            result, spotify_id = await Spotify.album(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+    if ptype == "spartist":
+        try:
+            result, spotify_id = await Spotify.artist(videoid)
+        except:
+            return await mystic.edit_text(_["play_3"])
+    if ptype == "apple":
+        try:
+            result, apple_id = await Apple.playlist(videoid, True)
+        except:
+            return await mystic.edit_text(_["play_3"])
+    try:
+        await stream(
+            _,
+            mystic,
+            user_id,
+            result,
+            chat_id,
+            user_name,
+            CallbackQuery.message.chat.id,
+            video,
+            streamtype="playlist",
+            spotify=spotify,
+            forceplay=ffplay,
+        )
+    except Exception as e:
+        ex_type = type(e).__name__
+        err = e if ex_type == "AssistantErr" else _["general_2"].format(ex_type)
+        return await mystic.edit_text(err)
+    return
+
+
+@app.on_callback_query(filters.regex("slider") & ~BANNED_USERS)
+@languageCB
+async def slider_queries(client, CallbackQuery, _):
+    callback_data = CallbackQuery.data.strip()
+    callback_request = callback_data.split(None, 1)[1]
+    (
+        what,
+        rtype,
+        query,
+        user_id,
+        cplay,
+        fplay,
+    ) = callback_request.split("|")
+    if CallbackQuery.from_user.id != int(user_id):
+        try:
+            return await CallbackQuery.answer(_["playcb_1"], show_alert=True)
+        except:
+            return
+    what = str(what)
+    rtype = int(rtype)
+    if what == "F":
+        if rtype == 9:
+            query_type = 0
+        else:
+            query_type = int(rtype + 1)
+        try:
+            await CallbackQuery.answer(_["playcb_2"])
+        except:
+            pass
+        title, duration_min, thumbnail, vidid = await YouTube.slider(query, query_type)
+        buttons = slider_markup(_, vidid, user_id, query, query_type, cplay, fplay)
+        return await CallbackQuery.edit_message_text(
+            text=_["play_10"].format(
+                title.title(),
+                duration_min,
+            ),
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
+    if what == "B":
+        if rtype == 0:
+            query_type = 9
+        else:
+            query_type = int(rtype - 1)
+        try:
+            await CallbackQuery.answer(_["playcb_2"])
+        except:
+            pass
+        title, duration_min, thumbnail, vidid = await YouTube.slider(query, query_type)
+        buttons = slider_markup(_, vidid, user_id, query, query_type, cplay, fplay)
+        return await CallbackQuery.edit_message_text(
+            text=_["play_10"].format(
+                title.title(),
+                duration_min,
+            ),
+            reply_markup=InlineKeyboardMarkup(buttons)
+        )
