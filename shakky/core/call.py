@@ -89,12 +89,12 @@ class Call(PyTgCalls):
             try:
                 await assistant.change_stream(chat_id, stream)
             except Exception as e:
-                logger(__name__).error(f"Change stream failed: {e}")
+                logger.error(f"Change stream failed: {e}")
         except Exception as e:
             if "No active group call" in str(e):
-                logger(__name__).warning(f"Voice chat not started in {chat_id}. Assistant cannot join.")
+                logger.warning(f"Voice chat not started in {chat_id}. Assistant cannot join.")
             else:
-                logger(__name__).error(f"Assistant {assistant} failed to join VC: {e}")
+                logger.error(f"Assistant {assistant} failed to join VC: {e}")
             raise e
 
         # WebApp sync

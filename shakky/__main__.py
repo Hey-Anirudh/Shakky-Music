@@ -1,9 +1,11 @@
+import logging
 import asyncio
 import importlib
 import signal
 from pyrogram import idle
 import config
 from shakky import LOGGER, app
+logger = logging.getLogger("shakky")
 from shakky.core.call import Nand
 from shakky.misc import sudo
 from shakky.plugins import ALL_MODULES
