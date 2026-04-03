@@ -4,7 +4,7 @@ pytgcalls==3.0.0.dev20
 ntgcalls
 fastapi
 uvicorn
-python-socketio[asyncio]
+python-socketio[asgi]
 aiohttp
 motor
 pymongo

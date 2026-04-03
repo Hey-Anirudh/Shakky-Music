@@ -66,10 +66,12 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
         )
-        self.one = PyTgCalls(
-            self.userbot1,
-            cache_duration=100,
-        )
+        # Initialize base class as Ass1
+        super().__init__(self.userbot1, cache_duration=100)
+        
+        # We also keep 'self.one' for backward compatibility and explicit access
+        self.one = self 
+        
         self.userbot2 = Client(
             name="Ass2",
             api_id=config.API_ID,
@@ -483,9 +485,10 @@ class Call(PyTgCalls):
                 else:
                     stream = AudioPiped(link, audio_parameters=HighQualityAudio())
                 try:
+                    db[chat_id][0]["start_time"] = time.time()
                     await client.change_stream(chat_id, stream)
                     try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:], action="play")
+                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
                     except: pass
                 except: pass
             elif "vid_" in queued:
@@ -499,9 +502,10 @@ class Call(PyTgCalls):
                     stream = AudioPiped(queued, HighQualityAudio())
                     
                 try:
+                    db[chat_id][0]["start_time"] = time.time()
                     await client.change_stream(chat_id, stream)
                     try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:], action="play")
+                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
                     except: pass
                 except: pass
             else:
@@ -511,9 +515,10 @@ class Call(PyTgCalls):
                 else:
                     stream = AudioPiped(queued, HighQualityAudio())
                 try:
+                    db[chat_id][0]["start_time"] = time.time()
                     await client.change_stream(chat_id, stream)
                     try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:], action="play")
+                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
                     except: pass
                 except: pass
 

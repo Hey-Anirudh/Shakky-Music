@@ -43,8 +43,9 @@ async def stream(
     if streamtype == "youtube":
         vidid = result.get("vidid")
         title = str(result.get("title", "Unknown")).title()
-        duration_min = result.get("duration_min", "0:00")
-        thumbnail = result.get("thumb", "")
+        duration_min = result.get("duration", "0:00")
+        thumbnail = result.get("thumbnail_url", result.get("thumb", ""))
+        logger.info(f"[stream] Processing YouTube: {title} ({duration_min}) ID={vidid}")
         status = True if video else None
         
         try:

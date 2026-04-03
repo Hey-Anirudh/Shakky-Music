@@ -259,21 +259,29 @@ async def get_room(chat_id: Optional[str] = None):
 async def start_webapp_server():
     import uvicorn
     import socket
+    """Start the WebApp Player FastAPI/Socket.io server."""
     try:
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.bind(("0.0.0.0", PORT))
-        sock.close()
-    except OSError:
-        LOGGER.error(f"Port {PORT} is occupied.")
-        return
-
-    try:
+        LOGGER.info(f"Preparing to start WebApp Player Server on port {PORT}...")
         set_up_pyrogram_listener()
-        config_uv = uvicorn.Config(socket_app, host="0.0.0.0", port=PORT, log_level="info", handle_signals=False)
+        
+        config_uv = uvicorn.Config(
+            socket_app, 
+            host="0.0.0.0", 
+            port=PORT, 
+            log_level="info", 
+            handle_signals=False,
+            timeout_keep_alive=60
+        )
         server = uvicorn.Server(config_uv)
+        
+        LOGGER.info(f"WebApp Server BINDING to 0.0.0.0:{PORT}")
         await server.serve()
+        
     except Exception as e:
-        LOGGER.error(f"WebApp Server Error: {e}")
+        LOGGER.exception(f"CRITICAL: WebApp Server Failed to start or crashed: {e}")
+        # If port is busy, try to log it specifically
+        if "address already in use" in str(e).lower():
+            LOGGER.error(f"Port {PORT} is already in use. Please check for zombie processes.")
 
 if __name__ == "__main__":
     import asyncio

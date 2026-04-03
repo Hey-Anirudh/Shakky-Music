@@ -11,12 +11,16 @@ from shakky.misc import db
 LOGGER = logging.getLogger(__name__)
 
 
-def _normalize_id(chat_id) -> str:
-    """Normalize chat ID for WebApp room. Use absolute value as string."""
-    try:
-        return str(abs(int(chat_id)))
-    except:
-        return str(chat_id).replace("-", "")
+def _normalize_id(raw_id) -> str:
+    """Standardizes IDs to 'c' prefixed strings for negative IDs, matching sync.py."""
+    s = str(raw_id).strip()
+    if s.startswith("-"):
+        return "c" + s[1:]
+    if s.startswith("c"):
+        return s
+    if s.startswith("100") and len(s) >= 11:
+        return "c" + s
+    return s
 
 
 def _get_media_url(current_song: dict) -> str | None:
