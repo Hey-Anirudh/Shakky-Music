@@ -19,6 +19,14 @@ import time
 
 logger = logging.getLogger(__name__)
 
+# Global sequencer to prevent concurrent play requests from overlapping or skipping within a single chat
+_play_sequencer = {}
+
+def get_chat_lock(chat_id):
+    if chat_id not in _play_sequencer:
+        _play_sequencer[chat_id] = asyncio.Lock()
+    return _play_sequencer[chat_id]
+
 async def stream(
     _,
     mystic,
@@ -36,88 +44,96 @@ async def stream(
     if not result:
         return await mystic.edit_text("➲ **No results found.**")
 
-    if forceplay:
-        await ani.stop_stream_force(chat_id)
-        db[chat_id] = []
-        asyncio.create_task(_notify_safe(chat_id, is_playing=False, action="stop"))
+    async with get_chat_lock(chat_id):
+        if forceplay:
+            await ani.stop_stream_force(chat_id)
+            db[chat_id] = []
+            asyncio.create_task(_notify_safe(chat_id, is_playing=False, action="stop"))
 
-    if streamtype == "youtube":
-        vidid = result.get("vidid")
-        title = str(result.get("title", "Unknown")).title()
-        duration_min = result.get("duration", "0:00")
-        thumbnail = result.get("thumbnail_url", result.get("thumb", ""))
-        logger.info(f"[stream] Processing YouTube: {title} ({duration_min}) ID={vidid}")
-        status = True if video else None
-        
-        try:
-            file_path, direct = await asyncio.wait_for(
-                YouTube.download(
-                    vidid, mystic, videoid=True, video=status, raw_query=raw_query or title
-                ),
-                timeout=45
-            )
-        except asyncio.TimeoutError:
-            logger.error(f"Download timed out for {vidid}")
-            raise AssistantErr("➲ **Download timed out. Try again.**")
-        except Exception as e:
-            logger.error(f"Download failed: {e}")
-            raise AssistantErr("➲ **Failed to download track.**")
-
-        if await is_active_chat(chat_id):
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path if direct else f"vid_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if video else "audio",
-            )
-            position = len(db.get(chat_id)) - 1
-            button = aq_markup(_, chat_id)
-            await app.send_message(
-                original_chat_id,
-                text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**By:** {user_name}",
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-            # Pre-download this queued track in background
-            asyncio.create_task(_predownload_queued(chat_id, position))
-        else:
-            await put_queue(
-                chat_id,
-                original_chat_id,
-                file_path if direct else f"vid_{vidid}",
-                title,
-                duration_min,
-                user_name,
-                vidid,
-                user_id,
-                "video" if video else "audio",
-                forceplay=forceplay,
-            )
-            await ani.join_call(
-                chat_id,
-                original_chat_id,
-                file_path,
-                video=status,
-                image=thumbnail,
-            )
+        if streamtype == "youtube":
+            vidid = result.get("vidid")
+            title = str(result.get("title", "Unknown")).title()
+            duration_min = result.get("duration", "0:00")
+            thumbnail = result.get("thumbnail_url", result.get("thumb", ""))
+            logger.info(f"[stream] Processing YouTube: {title} ({duration_min}) ID={vidid}")
+            status = True if video else None
             
-            # Start sync session
-            current = db[chat_id][0]
-            current["start_time"] = time.time()
-            
-            # Fire thumbnail + Now Playing in background for instant response
-            asyncio.create_task(
-                _send_initial_now_playing(
-                    chat_id, vidid, title, duration_min, user_name, user_id,
-                    original_chat_id, _
+            try:
+                # 🩹 NOTE: Download is now inside the lock to preserve order
+                file_path, direct = await asyncio.wait_for(
+                    YouTube.download(
+                        vidid, mystic, videoid=True, video=status, raw_query=raw_query or title
+                    ),
+                    timeout=45
                 )
-            )
-            
-    # Other streamtypes (soundcloud, telegram, index, live) follow same pattern...
+            except asyncio.TimeoutError:
+                logger.error(f"Download timed out for {vidid}")
+                raise AssistantErr("➲ **Download timed out. Try again.**")
+            except Exception as e:
+                logger.error(f"Download failed: {e}")
+                raise AssistantErr("➲ **Failed to download track.**")
+
+            if await is_active_chat(chat_id):
+                await put_queue(
+                    chat_id,
+                    original_chat_id,
+                    file_path if direct else f"vid_{vidid}",
+                    title,
+                    duration_min,
+                    user_name,
+                    vidid,
+                    user_id,
+                    "video" if video else "audio",
+                )
+                position = len(db.get(chat_id)) - 1
+                button = aq_markup(_, chat_id)
+                await app.send_message(
+                    original_chat_id,
+                    text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**By:** {user_name}",
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+                asyncio.create_task(_predownload_queued(chat_id, position))
+            else:
+                await put_queue(
+                    chat_id,
+                    original_chat_id,
+                    file_path if direct else f"vid_{vidid}",
+                    title,
+                    duration_min,
+                    user_name,
+                    vidid,
+                    user_id,
+                    "video" if video else "audio",
+                    forceplay=forceplay,
+                )
+                
+                # --- Stats Update for Wrapped ---
+                try:
+                    from shakky.utils.database import update_stats
+                    from shakky.utils.formatters import time_to_seconds
+                    dur_sc = 0
+                    try: dur_sc = time_to_seconds(duration_min)
+                    except: pass
+                    asyncio.create_task(update_stats(user_id, chat_id, vidid, title, dur_sc))
+                except:
+                    pass
+                await ani.join_call(
+                    chat_id,
+                    original_chat_id,
+                    file_path,
+                    video=status,
+                    image=thumbnail,
+                )
+                current = db[chat_id][0]
+                current["start_time"] = time.time()
+                asyncio.create_task(
+                    _send_initial_now_playing(
+                        chat_id, vidid, title, duration_min, user_name, user_id,
+                        original_chat_id, _
+                    )
+                )
+        
+        # NOTE: If adding more streamtypes, they should also stay inside this 'async with lock' block
 
 async def _notify_safe(chat_id, **kwargs):
     """Fire-and-forget webapp notification."""

@@ -23,6 +23,7 @@ sudoersdb = mongodb.sudoers
 usersdb = mongodb.tgusersdb
 filtersdb = mongodb.filters
 notesdb = mongodb.notes
+statsdb = mongodb.stats
 
 
 active = []
@@ -796,11 +797,50 @@ async def save_filter(chat_id: int, name: str, _filter: dict):
     name = name.lower().strip()
     _filters = await _get_filters(chat_id)
     _filters[name] = _filter
-    await filtersdb.update_one(
-        {"chat_id": chat_id},
-        {"$set": {"filters": _filters}},
-        upsert=True,
-    )
+async def update_stats(user_id: int, chat_id: int, videoid: str, title: str, duration_secs: int):
+    """
+    Update global and user-specific playback stats for the 'Wrapped' feature.
+    """
+    try:
+        # 1. Global Platform Stats
+        await statsdb.update_one(
+            {"ID": "GLOBAL_PLAYED"},
+            {"$inc": {"total_calls": 1, "total_seconds": duration_secs}},
+            upsert=True
+        )
+        
+        # 2. User Personalized Stats
+        # We store top 10 songs in a separate field for easy retrieval
+        await statsdb.update_one(
+            {"user_id": user_id},
+            {
+                "$inc": {
+                    "total_tracks": 1,
+                    "total_seconds": duration_secs,
+                    f"history.{videoid}.count": 1
+                },
+                "$set": {
+                    "last_played": datetime.now(),
+                    f"history.{videoid}.title": title
+                }
+            },
+            upsert=True
+        )
+        
+        # 3. Chat Specific Stats
+        await statsdb.update_one(
+            {"chat_id": chat_id},
+            {"$inc": {"total_tracks": 1, "total_seconds": duration_secs}},
+            upsert=True
+        )
+    except Exception as e:
+        print(f"Error updating stats: {e}")
+
+async def get_user_stats(user_id: int):
+    return await statsdb.find_one({"user_id": user_id})
+
+async def get_global_stats():
+    return await statsdb.find_one({"ID": "GLOBAL_PLAYED"})
 
 
 async def delete_filter(chat_id: int, name: str) -> bool:

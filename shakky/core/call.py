@@ -585,6 +585,16 @@ class Call(PyTgCalls):
             )
         except Exception as e:
             LOGGER.warning(f"WebApp notify failed: {e}")
+            
+        # --- Stats Update for Wrapped ---
+        try:
+            from shakky.utils.database import update_stats
+            u_id = db[chat_id][0].get("user_id")
+            d_sec = db[chat_id][0].get("seconds", 0)
+            if u_id:
+                asyncio.create_task(update_stats(u_id, chat_id, videoid, title, d_sec))
+        except:
+            pass
 
     async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, _, mention):
         """Generate thumbnail and send Now Playing message in background."""

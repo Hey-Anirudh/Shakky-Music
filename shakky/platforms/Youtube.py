@@ -491,27 +491,7 @@ class YouTubeAPI:
             except:
                 pass
                 
-            # 5. Upload to @smashmusicdb with specialized caption
-            final_title = title or query
-            # Sanitize for keyword
-            sanitized_kw = "".join(e for e in final_title if e.isalnum() or e == " ").strip().replace(" ", "_").lower()
-            caption = f"{final_title} | #{sanitized_kw}\n\nID: {vidid}"
-            
-            # Use assistant account to upload if possible
-            if self._app:
-                try:
-                    chat_id = self._channel_id if self._channel_id else CHANNEL_USERNAME
-                    # Add file_name and title for better UX
-                    await self._app.send_audio(
-                        chat_id=chat_id,
-                        audio=file_path,
-                        caption=caption,
-                        title=final_title,
-                        performer="Smash Music"
-                    )
-                    logger.info(f"Uploaded new song to cache channel: {final_title}")
-                except Exception as ex:
-                    logger.warning(f"Failed to upload to cache channel: {ex}")
+            # DB Save bypassed (User requested fresh files only)
                     
             return file_path
             
@@ -1346,25 +1326,7 @@ class YouTubeAPI:
     async def _do_download(self, link, query, video_id, raw_query):
         """Actual download logic, called under dedup lock + semaphore."""
         async with self._download_semaphore:
-            if video_id:
-                # PRE-STEP 2A: Search by ID (Highest Precision)
-                logger.info(f"Checking DB channel for ID: {video_id}")
-                id_msg = await self._search_in_channel(video_id)
-                if id_msg:
-                    file_path = await self._download_audio_file(self._app, id_msg, video_id)
-                    if file_path:
-                        logger.info(f"Acquired via ID match: {file_path}")
-                        return file_path
-            
-            # STEP 2A - Search @smashmusicdb (CHANNEL_USERNAME) by Title
-            logger.info(f"Step 2A: Searching @smashmusicdb for: {query}")
-            msg = await self._search_smash_db(query)
-            if msg:
-                vidid_db = video_id if video_id else f"db_{msg.id}"
-                file_path = await self._download_audio_file(self._app, msg, vidid_db)
-                if file_path:
-                    logger.info(f"Acquired from Step 2A by title: {file_path}")
-                    return file_path
+            # DB Load bypassed (User requested fresh files only)
             
             # STEP 2B - Request via @YouMusicRobot
             if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
