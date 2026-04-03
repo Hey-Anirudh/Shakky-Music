@@ -441,7 +441,7 @@ class YouTubeAPI:
             start_time = time.time()
             
             while time.time() - start_time < timeout:
-                async for msg in self._youmusic_app.get_chat_history(GROUP_USERNAME, limit=50):
+                async for msg in self._youmusic_app.get_chat_history(GROUP_USERNAME, limit=3):
                     # Check if it's a direct reply
                     is_reply = msg.reply_to_message and msg.reply_to_message.id == sent_msg.id
                     
@@ -476,7 +476,7 @@ class YouTubeAPI:
                                 break
                 if audio_msg:
                     break
-                await asyncio.sleep(1) # Faster polling
+                await asyncio.sleep(0.5) # Faster polling
                 
             if not audio_msg:
                 logger.error(f"Timeout waiting for @YouMusicRobot reply for: {query}")
