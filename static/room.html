@@ -1313,6 +1313,7 @@
                 c = audio.currentTime;
                 p = (c / (audio.duration || durationSec || 1)) * 100;
             }
+            if(durationSec && c > durationSec) { c = durationSec; p = 100; }
             p = Math.min(100, Math.max(0, p));
             document.getElementById('progress-fill').style.width = p + '%';
             document.getElementById('prog-thumb').style.left = p + '%';

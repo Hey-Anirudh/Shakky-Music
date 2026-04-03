@@ -16,8 +16,19 @@ async def timer():
             duration = int(playing[0]["seconds"])
             if duration == 0:
                 continue
-            if db[chat_id][0]["played"] >= duration:
-                continue
+            
+            # Auto-Recovery: if song hangs past its duration
+            if db[chat_id][0]["played"] >= duration + 4:
+                try:
+                    from shakky.core.call import ani
+                    # Force a skip event
+                    import random
+                    client = random.choice([ani.one, ani.two, ani.three, ani.four, ani.five])
+                    asyncio.create_task(ani.change_stream(client, chat_id))
+                    continue
+                except:
+                    continue
+                    
             db[chat_id][0]["played"] += 1
 
 
