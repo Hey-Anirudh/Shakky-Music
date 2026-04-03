@@ -48,49 +48,47 @@ async def get_thumb(videoid, title, duration, by, chat_id):
         if yt_thumb_path and os.path.exists(yt_thumb_path):
             yt_img = Image.open(yt_thumb_path).convert("RGB")
             
-            # Place YT image in the center wanted poster area
-            # Estimated coordinates for the center poster in the provided stencil
-            # Poster is roughly at [360, 240] to [580, 600] in a 1920x1080 context?
-            # Let's scale based on actual image size.
-            
-            # Target area for the portrait:
-            # We'll put it roughly in the middle, slightly offset for the One Piece look
-            target_w = int(width * 0.22)
-            target_h = int(height * 0.28)
+            # The central Luffy poster portrait in 735x420 collage is approx:
+            # x: 295, y: 155, w: 145, h: 105
+            # We scale relative to actual image size just in case:
+            target_w = int(width * 0.197)
+            target_h = int(height * 0.25)
             yt_img = yt_img.resize((target_w, target_h), Image.LANCZOS)
             
-            # Position: Middle poster frame
-            pos_x = int(width * 0.38)
-            pos_y = int(height * 0.26)
+            pos_x = int(width * 0.40)
+            pos_y = int(height * 0.36)
             
-            stencil.paste(yt_img, (pos_x, pos_y))
+            # Add a slight dark border to blend it in
+            border = Image.new("RGB", (target_w + 4, target_h + 4), (40, 25, 15))
+            border.paste(yt_img, (2, 2))
+            
+            stencil.paste(border, (pos_x - 2, pos_y - 2))
 
         # 4. Text Overlays
         draw = ImageDraw.Draw(stencil)
         
-        # We try to load a font, fallback to default
         try:
-            # You might need to provide a .ttf file on the VPS or use a system font
             font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
             if not os.path.exists(font_path):
-                font_path = "arial.ttf" # Windows fallback
+                font_path = "arial.ttf"
             
-            title_font = ImageFont.truetype(font_path, int(height * 0.05))
-            info_font = ImageFont.truetype(font_path, int(height * 0.03))
+            title_font = ImageFont.truetype(font_path, int(height * 0.045))
+            info_font = ImageFont.truetype(font_path, int(height * 0.035))
         except:
             title_font = ImageFont.load_default()
             info_font = ImageFont.load_default()
 
-        # Draw Title (centered bottom)
-        clean_title = (title[:25] + '...') if len(title) > 25 else title
-        text_color = (60, 40, 20) # Brownish like the wanted poster
+        # Clean title for layout
+        clean_title = (title[:22] + '...') if len(title) > 22 else title
+        text_color = (48, 28, 13) # Very dark brown, perfectly matching wanted ink
         
-        # Position Title on the center poster's name area
-        draw.text((int(width*0.4), int(height*0.62)), clean_title.upper(), font=title_font, fill=text_color)
+        # Dead or Alive section placement
+        title_y = int(height * 0.64)
+        draw.text((int(width * 0.405), title_y), clean_title.upper(), font=title_font, fill=text_color)
         
-        # Draw Duration & Requested By
-        draw.text((int(width*0.4), int(height*0.71)), f"DUR: {duration}", font=info_font, fill=text_color)
-        draw.text((int(width*0.4), int(height*0.75)), f"REQ: {by[:15]}", font=info_font, fill=text_color)
+        # Bounty / Info placement
+        info_y = int(height * 0.70)
+        draw.text((int(width * 0.41), info_y), f"DUR: {duration}  |  BY: {by[:10]}", font=info_font, fill=text_color)
 
         # 5. Save
         stencil.save(output_path, "JPEG", quality=85)
