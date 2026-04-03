@@ -102,7 +102,7 @@ async def stream(
             
             # Generate custom thumbnail
             try:
-                thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id)
+                thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id, user_id=user_id)
                 current["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
             except Exception as e:
                 logger.error(f"Thumbnail generation error: {e}")
