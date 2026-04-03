@@ -129,6 +129,12 @@ async def put_queue(
     if chat_id not in db:
         db[chat_id] = []
     
+    try:
+        from shakky.utils.formatters import time_to_seconds
+        duration_in_seconds = time_to_seconds(duration) - 3
+    except:
+        duration_in_seconds = 0
+
     song_info = {
         "chat_id": chat_id,
         "file": file,
@@ -139,6 +145,8 @@ async def put_queue(
         "user_id": user_id,
         "streamtype": streamtype,
         "start_time": 0,
+        "seconds": duration_in_seconds,
+        "played": 0,
     }
     
     if forceplay:
