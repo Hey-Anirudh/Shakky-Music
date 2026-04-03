@@ -73,11 +73,17 @@ async def init():
     
     await Nand.decorators()
     
+    # Start Periodic Cleanup (every 30m)
+    from shakky.utils.cleanup import start_cleaning
+    cleanup_task = asyncio.create_task(start_cleaning())
+    LOGGER("shakky").info("Background cleanup task started (runs every 30m).")
+
     LOGGER("shakky").info("Music Bot Started as Shakky Music Bot")
     
     await idle()
     
     # Cleanup
+    cleanup_task.cancel()
     if webapp_task:
         webapp_task.cancel()
         try:

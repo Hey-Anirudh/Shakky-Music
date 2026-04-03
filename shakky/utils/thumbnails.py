@@ -171,19 +171,29 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
 
         # ── 3. Get Telegram PFPs ─────────────────────────────────────────────────
         from shakky import app as bot_app
+        from shakky.core.userbot import userbot as assistant_manager
 
+        # Selection of a valid Pyrogram client (Assistant is usually best for PFP access)
+        client = None
+        if hasattr(assistant_manager.one, "get_profile_photos"):
+            client = assistant_manager.one
+        elif hasattr(bot_app, "get_profile_photos"):
+            client = bot_app
+        
         pfp_size = int(min(W, H) * 0.22)
 
         req_img = None
-        if user_id:
-            req_img = await _get_tg_pfp(bot_app, int(user_id), f"pfp_user_{user_id}.jpg")
+        if user_id and client:
+            req_img = await _get_tg_pfp(client, int(user_id), f"pfp_user_{user_id}.jpg")
 
         bot_img = None
-        try:
-            me = await bot_app.get_me()
-            bot_img = await _get_tg_pfp(bot_app, me.id, f"pfp_bot_{me.id}.jpg")
-        except Exception:
-            pass
+        if client:
+            try:
+                me = await client.get_me() if client == assistant_manager.one else await bot_app.get_me()
+                pfp_id = me.id
+                bot_img = await _get_tg_pfp(client, pfp_id, f"pfp_bot_{pfp_id}.jpg")
+            except Exception:
+                pass
 
         # Fallback solid-colour circles if PFP unavailable
         if req_img is None:
