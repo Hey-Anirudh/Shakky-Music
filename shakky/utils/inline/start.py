@@ -25,7 +25,10 @@ def private_panel(_):
             )
         ],
         [
-            InlineKeyboardButton(text=f"{(_['S_B_10'])}", user_id=config.OWNER_ID),
+            InlineKeyboardButton(
+                text=f"{(_['S_B_10'])}",
+                url=f"https://t.me/{config.OWNER_USERNAME.replace('@', '')}"
+            ),
             InlineKeyboardButton(text=f"{(_['S_B_6'])}", url=config.SUPPORT_CHAT),
         ],
         [
