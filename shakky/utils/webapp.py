@@ -1,4 +1,4 @@
-# Ani/utils/webapp.py
+# shakky/utils/webapp.py
 # Sends playback state to the FastAPI/Socket.io server.
 # The server then broadcasts to all connected Mini App clients.
 

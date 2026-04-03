@@ -32,7 +32,7 @@ logging.basicConfig(
 logging.getLogger("httpx").setLevel(logging.ERROR)
 logging.getLogger("pymongo").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
-# pytgcalls removed — bot streams to WebApp only
+logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 
 
 def LOGGER(name: str) -> logging.Logger:

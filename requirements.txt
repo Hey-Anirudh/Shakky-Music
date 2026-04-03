@@ -1,6 +1,7 @@
 pyrogram==2.0.106
 TgCrypto
-py-tgcalls==0.9.7
+pytgcalls==3.0.0.dev20
+ntgcalls
 fastapi
 uvicorn
 python-socketio[asyncio]
@@ -20,3 +21,8 @@ pykeyboard
 aiofiles
 humanize
 httpx==0.24.1
+ffmpeg-python
+gitpython
+pydub
+spotipy
+pickledb

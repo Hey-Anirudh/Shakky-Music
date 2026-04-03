@@ -6,10 +6,9 @@ import logging
 LOGGER = logging.getLogger("shakky.sync")
 SIO_INSTANCE = None # To be injected by server.py
 
-# Determine project root (smashmusic/)
-# __file__ is Ani/utils/sync.py
-BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # Ani/utils
-PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR)) # smashmusic/
+# Determine project root
+BASE_DIR = os.path.dirname(os.path.abspath(__file__)) # shakky/utils
+PROJECT_ROOT = os.path.dirname(os.path.dirname(BASE_DIR)) # shakky/
 DB_PATH = os.path.join(PROJECT_ROOT, "webapp_db.json")
 
 def load_rooms():
@@ -43,7 +42,6 @@ def normalize_id(raw_id) -> str:
         return "c" + s[1:]
     if s.startswith("c"):
         return s
-    # If it's a large positive number starting with 100, it's likely a supergroup ID missing its minus
     if s.startswith("100") and len(s) >= 11:
         return "c" + s
     return s
@@ -51,13 +49,12 @@ def normalize_id(raw_id) -> str:
 async def broadcast_state(chat_id, is_playing: bool = True, action: str = "update"):
     """
     Central state broadcaster. 
-    Pull current state from db and push to all WebApp clients via Socket.io.
+    Pulls current state from db and pushes to all WebApp clients via Socket.io.
     """
     from shakky.misc import db
     
     chat_key = normalize_id(chat_id)
     
-    # Reconstruct bot_id for db lookup
     try:
         if chat_key.startswith("c"):
             bot_id = int(chat_key[1:]) * -1
@@ -97,22 +94,17 @@ async def broadcast_state(chat_id, is_playing: bool = True, action: str = "updat
                 thumb = "https://files.catbox.moe/5ni0on.jpg"
 
             file_path = s.get("file", "")
-            if not file_path:
-                file_path = s.get("path", "") # Fallback for some stream types
-            
             media_url = None
             if file_path:
                 file_path = str(file_path)
                 if os.path.isfile(file_path):
                     media_url = f"/media/{os.path.basename(file_path)}"
                 else:
-                    # Try relative to PROJECT_ROOT/downloads
                     alt_path = os.path.join(PROJECT_ROOT, "downloads", os.path.basename(file_path))
                     if os.path.isfile(alt_path):
                         media_url = f"/media/{os.path.basename(alt_path)}"
             
             if not media_url and vidid and vidid not in ("telegram", "soundcloud", "index", ""):
-                # Last resort fallback check in downloads
                 for ext in ["mp3", "m4a", "webm", "ogg", "opus"]:
                     candidate = os.path.join(PROJECT_ROOT, "downloads", f"{vidid}.{ext}")
                     if os.path.exists(candidate):
