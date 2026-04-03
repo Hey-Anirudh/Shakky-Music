@@ -166,17 +166,18 @@ async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_na
             f"✧ **Duration:** `{duration_min}`\n"
             f"✧ **By:** {user_name}"
         )
-        if str(thumb_path).startswith("http"):
-            run = await app.send_message(
-                original_chat_id,
-                text=msg_text,
-                reply_markup=InlineKeyboardMarkup(button),
-            )
-        else:
+        try:
             run = await app.send_photo(
                 original_chat_id,
                 photo=thumb_path,
                 caption=msg_text,
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+        except Exception as e:
+            logger.error(f"Thumbnail send failed, sending message instead: {e}")
+            run = await app.send_message(
+                original_chat_id,
+                text=msg_text,
                 reply_markup=InlineKeyboardMarkup(button),
             )
         db[chat_id][0]["mystic"] = run

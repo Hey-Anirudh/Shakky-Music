@@ -114,6 +114,7 @@ class Call(PyTgCalls):
             cache_duration=100,
         )
         self._locks = {}
+        self._last_skip = {}
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks:
@@ -446,6 +447,15 @@ class Call(PyTgCalls):
     async def change_stream(self, client, chat_id, mention=None):
         lock = self.get_lock(chat_id)
         async with lock:
+            # 🩹 FIX: Anti-Double-Skip Logic
+            # Prevents watchdog and on_stream_end events from skipping twice in < 2s
+            now = time.time()
+            if chat_id in self._last_skip:
+                if now - self._last_skip[chat_id] < 2:
+                    LOGGER.info(f"[change_stream] Ignoring duplicate skip for {chat_id}")
+                    return
+            self._last_skip[chat_id] = now
+
             check = db.get(chat_id)
             if not check:
                 await _clear_(chat_id)
@@ -618,17 +628,18 @@ class Call(PyTgCalls):
             if mention:
                 msg_text += f"\n✧ **Skipped By:** {mention}"
             
-            if str(thumb_path).startswith("http"):
-                run = await app.send_message(
-                    original_chat_id,
-                    text=msg_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-            else:
+            try:
                 run = await app.send_photo(
                     original_chat_id,
                     photo=thumb_path,
                     caption=msg_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            except Exception as e:
+                LOGGER.error(f"Thumbnail send failed in call.py, sending message instead: {e}")
+                run = await app.send_message(
+                    original_chat_id,
+                    text=msg_text,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             
