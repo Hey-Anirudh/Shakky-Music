@@ -567,11 +567,43 @@ class Call(PyTgCalls):
                 LOGGER.warning(f"WebApp notify failed after change_stream: {e}")
 
             # --- Generate thumbnail for the new track ---
+            duration_min = db[chat_id][0].get("dur", "0:00")
             try:
-                thumb_path = await get_thumb(videoid, title, db[chat_id][0].get("dur", "0:00"), user, chat_id)
+                thumb_path = await get_thumb(videoid, title, duration_min, user, chat_id)
                 db[chat_id][0]["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
-            except:
-                pass
+            except Exception as e:
+                LOGGER.error(f"Thumbnail generation error in change_stream: {e}")
+                thumb_path = config.STREAM_IMG_URL
+
+            # --- SEND NOW PLAYING MESSAGE TO TELEGRAM ---
+            try:
+                button = stream_markup(_, chat_id)
+                msg_text = (
+                    f"▷ **Now Playing**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"✧ **Track:** `{title[:28]}`\n"
+                    f"✧ **Duration:** `{duration_min}`\n"
+                    f"✧ **By:** {user}"
+                )
+                
+                if str(thumb_path).startswith("http"):
+                    run = await app.send_message(
+                        original_chat_id,
+                        text=msg_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                else:
+                    run = await app.send_photo(
+                        original_chat_id,
+                        photo=thumb_path,
+                        caption=msg_text,
+                        reply_markup=InlineKeyboardMarkup(button),
+                    )
+                
+                db[chat_id][0]["mystic"] = run
+                db[chat_id][0]["markup"] = "stream"
+            except Exception as e:
+                LOGGER.error(f"Failed to send Now Playing msg in change_stream: {e}")
 
     async def ping(self):
         pings = []
