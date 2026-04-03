@@ -58,6 +58,12 @@ class YouTubeAPI:
         self._initialized = False
         self._channel_id = None
         
+        # --- Performance: Concurrency Controls ---
+        self._download_semaphore = asyncio.Semaphore(10)  # Max 10 concurrent downloads
+        self._search_semaphore = asyncio.Semaphore(15)    # Max 15 concurrent searches
+        self._inflight_downloads = {}  # video_id -> asyncio.Lock (dedup)
+        self._inflight_lock = asyncio.Lock()  # Protects _inflight_downloads dict
+        
         # Ensure directories exist
         os.makedirs(self.download_folder, exist_ok=True)
     
@@ -470,7 +476,7 @@ class YouTubeAPI:
                                 break
                 if audio_msg:
                     break
-                await asyncio.sleep(3)
+                await asyncio.sleep(1) # Faster polling
                 
             if not audio_msg:
                 logger.error(f"Timeout waiting for @YouMusicRobot reply for: {query}")
@@ -523,9 +529,10 @@ class YouTubeAPI:
             if not any(k in query.lower() for k in ["music", "official", "lyrics", "audio", "video"]):
                 search_query = f"{query} music"
 
-            # 2. Fetch multiple candidates
-            results = VideosSearch(search_query, limit=5)
-            search_result = await results.next()
+            # 2. Fetch multiple candidates (with concurrency control)
+            async with self._search_semaphore:
+                results = VideosSearch(search_query, limit=5)
+                search_result = await results.next()
             
             if search_result.get("result"):
                 candidates = search_result["result"]
@@ -980,36 +987,41 @@ class YouTubeAPI:
             found_messages = []
             
             try:
-                async for message in self._app.search_messages(
-                    chat_id=CHANNEL_USERNAME,
-                    query=video_id,
-                    limit=50,
-                    filter=MessagesFilter.AUDIO
-                ):
-                    if message and (message.audio or message.document):
-                        found_messages.append(message)
-                
-                if not found_messages:
-                    async for message in self._app.get_chat_history(
+                async with self._search_semaphore:
+                    async for message in self._app.search_messages(
                         chat_id=CHANNEL_USERNAME,
-                        limit=200
+                        query=video_id,
+                        limit=10,
+                        filter=MessagesFilter.AUDIO
                     ):
                         if message and (message.audio or message.document):
-                            if message.caption:
-                                caption_lower = message.caption.lower()
-                                for term in search_terms:
-                                    if term.lower() in caption_lower:
-                                        found_messages.append(message)
-                                        break
+                            found_messages.append(message)
+                            break  # First match is enough for ID search
+                
+                    if not found_messages:
+                        async for message in self._app.get_chat_history(
+                            chat_id=CHANNEL_USERNAME,
+                            limit=50
+                        ):
+                            if message and (message.audio or message.document):
+                                if message.caption:
+                                    caption_lower = message.caption.lower()
+                                    for term in search_terms:
+                                        if term.lower() in caption_lower:
+                                            found_messages.append(message)
+                                            break
+                                
+                                filename = None
+                                if message.audio and message.audio.file_name:
+                                    filename = message.audio.file_name.lower()
+                                elif message.document and message.document.file_name:
+                                    filename = message.document.file_name.lower()
+                                
+                                if filename and video_id.lower() in filename:
+                                    found_messages.append(message)
                             
-                            filename = None
-                            if message.audio and message.audio.file_name:
-                                filename = message.audio.file_name.lower()
-                            elif message.document and message.document.file_name:
-                                filename = message.document.file_name.lower()
-                            
-                            if filename and video_id.lower() in filename:
-                                found_messages.append(message)
+                                if found_messages:
+                                    break  # Stop scanning once found
             
             except Exception as e:
                 logger.warning(f"Search limited: {e}")
@@ -1107,7 +1119,7 @@ class YouTubeAPI:
                 except Exception as e:
                     logger.debug(f"Error checking messages in group: {e}")
                 
-                await asyncio.sleep(3)
+                await asyncio.sleep(1) # Faster polling
             
             if audio_message:
                 file_path = await self._download_audio_file(self._youmusic_app, audio_message, video_id)
@@ -1256,7 +1268,8 @@ class YouTubeAPI:
             return None
     
     async def download_song(self, link: str, raw_query: str = None) -> Optional[str]:
-        """Main method to download song following Step 2 logic: 2A -> 2B"""
+        """Main method to download song following Step 2 logic: 2A -> 2B
+        With concurrency controls and download deduplication."""
         await self.initialize()
         
         try:
@@ -1264,13 +1277,53 @@ class YouTubeAPI:
             query = raw_query if raw_query else link
             video_id = self._get_video_id(link)
             
-            # 2. Local check
+            # 2. Local check (instant, no lock needed)
             if video_id:
                 local_file = self._check_local_file(video_id)
                 if local_file:
                     logger.info(f"Using local file: {local_file}")
                     return local_file
+            
+            # --- Download Deduplication ---
+            # If another task is already downloading this exact video_id,
+            # wait for it instead of starting a duplicate download.
+            dedup_key = video_id or query
+            async with self._inflight_lock:
+                if dedup_key in self._inflight_downloads:
+                    logger.info(f"Waiting for in-flight download: {dedup_key}")
+                    existing_lock = self._inflight_downloads[dedup_key]
+                else:
+                    existing_lock = asyncio.Lock()
+                    self._inflight_downloads[dedup_key] = existing_lock
+            
+            async with existing_lock:
+                # Re-check local after acquiring lock (another task may have finished)
+                if video_id:
+                    local_file = self._check_local_file(video_id)
+                    if local_file:
+                        logger.info(f"Using local file (post-dedup): {local_file}")
+                        return local_file
                 
+                result = await self._do_download(link, query, video_id, raw_query)
+                return result
+            
+        except Exception as e:
+            logger.error(f"Error in download_song: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            return None
+        finally:
+            # Cleanup inflight entry
+            try:
+                async with self._inflight_lock:
+                    self._inflight_downloads.pop(dedup_key, None)
+            except:
+                pass
+    
+    async def _do_download(self, link, query, video_id, raw_query):
+        """Actual download logic, called under dedup lock + semaphore."""
+        async with self._download_semaphore:
+            if video_id:
                 # PRE-STEP 2A: Search by ID (Highest Precision)
                 logger.info(f"Checking DB channel for ID: {video_id}")
                 id_msg = await self._search_in_channel(video_id)
@@ -1284,7 +1337,6 @@ class YouTubeAPI:
             logger.info(f"Step 2A: Searching @smashmusicdb for: {query}")
             msg = await self._search_smash_db(query)
             if msg:
-                # Use msg ID or video_id for naming
                 vidid_db = video_id if video_id else f"db_{msg.id}"
                 file_path = await self._download_audio_file(self._app, msg, vidid_db)
                 if file_path:
@@ -1292,7 +1344,6 @@ class YouTubeAPI:
                     return file_path
             
             # STEP 2B - Request via @YouMusicRobot
-            # Try to get title for better external search if keyword is missing or looks like an ID
             if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
                 logger.debug(f"Resolving title for external search: {query}")
                 info = await self._get_song_info(link, fallback_title=raw_query)
@@ -1301,7 +1352,7 @@ class YouTubeAPI:
                     logger.info(f"Using resolved title for Step 2B search: {query}")
 
             logger.info(f"Step 2B: Fetching via @YouMusicRobot for: {query}")
-            title = raw_query or query # Use query as title fallback for captions
+            title = raw_query or query
             file_path = await self._fetch_via_youmusicbot(query, title=title)
             if file_path:
                 logger.info(f"Acquired from Step 2B: {file_path}")
@@ -1310,17 +1361,6 @@ class YouTubeAPI:
             # Final fallback
             logger.warning("Acquisition failed in both 2A and 2B. Final fallback attempt...")
             return await self._download_fallback(link, video_id or "unknown")
-            
-        except Exception as e:
-            logger.error(f"Error in download_song: {e}")
-            return None
-
-            
-        except Exception as e:
-            logger.error(f"Error in download_song: {e}")
-            import traceback
-            logger.error(traceback.format_exc())
-            return None
     
     async def _download_fallback(self, link: str, video_id: str) -> Optional[str]:
         """Fallback download methods"""
@@ -1365,8 +1405,12 @@ class YouTubeAPI:
                 }],
             }
             
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                ydl.download([link])
+            def _ytdlp_audio():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([link])
+            
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _ytdlp_audio)
             
             for ext in ["mp3", "m4a", "opus", "webm"]:
                 possible_path = os.path.join(self.download_folder, f"{video_id}.{ext}")
@@ -1409,7 +1453,7 @@ class YouTubeAPI:
                                         
                                         async with session.get(download_url) as file_response:
                                             with open(file_path, 'wb') as f:
-                                                async for chunk in file_response.content.iter_chunked(8192):
+                                                async for chunk in file_response.content.iter_chunked(65536):
                                                     f.write(chunk)
                                         
                                         logger.info(f"Video API download successful: {file_path}")
@@ -1426,8 +1470,12 @@ class YouTubeAPI:
                     'no_warnings': True,
                 }
                 
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([link])
+                def _ytdlp_video():
+                    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([link])
+                
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, _ytdlp_video)
                 
                 for ext in ["mp4", "webm", "mkv"]:
                     possible_path = os.path.join(self.download_folder, f"{video_id}.{ext}")

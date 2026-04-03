@@ -124,14 +124,18 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         await assistant.pause_stream(chat_id)
         try:
-            await notify_webapp(chat_id, action="pause")
+            current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
+            queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
+            await notify_webapp(chat_id, current_song=current_song, queue=queue, is_playing=False, action="pause")
         except: pass
 
     async def resume_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         await assistant.resume_stream(chat_id)
         try:
-            await notify_webapp(chat_id, action="play")
+            current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
+            queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
+            await notify_webapp(chat_id, current_song=current_song, queue=queue, is_playing=True, action="play")
         except: pass
 
     async def stop_stream(self, chat_id: int):
@@ -233,7 +237,7 @@ class Call(PyTgCalls):
         if str(db[chat_id][0]["file"]) == str(file_path):
             await assistant.change_stream(chat_id, stream)
         else:
-            raise AssistantErr("Umm")
+            raise AssistantErr("➲ **Cannot change speed, file mismatch.**")
         if str(db[chat_id][0]["file"]) == str(file_path):
             exis = (playing[0]).get("old_dur")
             if not exis:
@@ -439,7 +443,7 @@ class Call(PyTgCalls):
             except: pass
         
 
-    async def change_stream(self, client, chat_id):
+    async def change_stream(self, client, chat_id, mention=None):
         lock = self.get_lock(chat_id)
         async with lock:
             check = db.get(chat_id)
@@ -494,18 +498,18 @@ class Call(PyTgCalls):
                 db[chat_id][0]["speed"] = 1.0
             video = True if str(streamtype) == "video" else False
 
-            # --- JIT Download for vid_ references ---
+            # --- JIT Download for vid_ references (with 30s timeout) ---
             if "vid_" in queued:
                 if not os.path.exists(queued) and videoid:
                     try:
                         from shakky.platforms import YouTube as YT
-                        file_path, direct = await YT.download(
-                            videoid, video=video, raw_query=title
+                        file_path, direct = await asyncio.wait_for(
+                            YT.download(videoid, video=video, raw_query=title),
+                            timeout=30
                         )
                         if file_path and os.path.exists(file_path):
                             queued = file_path
                             db[chat_id][0]["file"] = file_path
-                            # Update duration from downloaded file
                             try:
                                 dur = await asyncio.get_event_loop().run_in_executor(
                                     None, check_duration, file_path
@@ -518,11 +522,13 @@ class Call(PyTgCalls):
                         else:
                             LOGGER.error(f"JIT download returned no file for {videoid}")
                             queued = None
+                    except asyncio.TimeoutError:
+                        LOGGER.error(f"JIT download timed out for {videoid}")
+                        queued = None
                     except Exception as e:
                         LOGGER.error(f"Failed JIT Download in change_stream: {e}")
                         queued = None
                 else:
-                    # vid_ prefix but file exists or no videoid
                     queued = queued if os.path.exists(queued) else None
 
             elif "live_" in queued:
@@ -554,56 +560,96 @@ class Call(PyTgCalls):
                 LOGGER.error(f"change_stream failed: {e}")
                 return
 
-            # --- Notify WebApp (sync skip to web player) ---
-            try:
-                await notify_webapp(
-                    chat_id,
-                    current_song=db[chat_id][0],
-                    queue=db[chat_id][1:6],
-                    action="skip",
-                    is_playing=True,
-                )
-            except Exception as e:
-                LOGGER.warning(f"WebApp notify failed after change_stream: {e}")
+            # --- Fire-and-forget WebApp notification (non-blocking) ---
+            asyncio.create_task(self._notify_webapp_safe(chat_id))
 
-            # --- Generate thumbnail for the new track ---
+            # --- Generate thumbnail + send Now Playing (background) ---
+            asyncio.create_task(
+                self._send_now_playing(
+                    chat_id, videoid, title, user, original_chat_id, _, mention
+                )
+            )
+
+            # --- Pre-download next track in queue (background) ---
+            asyncio.create_task(self._predownload_next(chat_id))
+
+    async def _notify_webapp_safe(self, chat_id):
+        """Fire-and-forget webapp notification."""
+        try:
+            await notify_webapp(
+                chat_id,
+                current_song=db[chat_id][0],
+                queue=db[chat_id][1:6],
+                action="skip",
+                is_playing=True,
+            )
+        except Exception as e:
+            LOGGER.warning(f"WebApp notify failed: {e}")
+
+    async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, _, mention):
+        """Generate thumbnail and send Now Playing message in background."""
+        try:
             duration_min = db[chat_id][0].get("dur", "0:00")
             try:
                 thumb_path = await get_thumb(videoid, title, duration_min, user, chat_id)
                 db[chat_id][0]["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
             except Exception as e:
-                LOGGER.error(f"Thumbnail generation error in change_stream: {e}")
+                LOGGER.error(f"Thumbnail generation error: {e}")
                 thumb_path = config.STREAM_IMG_URL
 
-            # --- SEND NOW PLAYING MESSAGE TO TELEGRAM ---
-            try:
-                button = stream_markup(_, chat_id)
-                msg_text = (
-                    f"▷ **Now Playing**\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"✧ **Track:** `{title[:28]}`\n"
-                    f"✧ **Duration:** `{duration_min}`\n"
-                    f"✧ **By:** {user}"
+            button = stream_markup(_, chat_id)
+            msg_text = (
+                f"▷ **Now Playing**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"✧ **Track:** `{title[:28]}`\n"
+                f"✧ **Duration:** `{duration_min}`\n"
+                f"✧ **By:** {user}"
+            )
+            if mention:
+                msg_text += f"\n✧ **Skipped By:** {mention}"
+            
+            if str(thumb_path).startswith("http"):
+                run = await app.send_message(
+                    original_chat_id,
+                    text=msg_text,
+                    reply_markup=InlineKeyboardMarkup(button),
                 )
-                
-                if str(thumb_path).startswith("http"):
-                    run = await app.send_message(
-                        original_chat_id,
-                        text=msg_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                else:
-                    run = await app.send_photo(
-                        original_chat_id,
-                        photo=thumb_path,
-                        caption=msg_text,
-                        reply_markup=InlineKeyboardMarkup(button),
-                    )
-                
-                db[chat_id][0]["mystic"] = run
-                db[chat_id][0]["markup"] = "stream"
-            except Exception as e:
-                LOGGER.error(f"Failed to send Now Playing msg in change_stream: {e}")
+            else:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=thumb_path,
+                    caption=msg_text,
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            
+            db[chat_id][0]["mystic"] = run
+            db[chat_id][0]["markup"] = "stream"
+        except Exception as e:
+            LOGGER.error(f"Failed to send Now Playing msg: {e}")
+
+    async def _predownload_next(self, chat_id):
+        """Pre-download the next track in queue so it's ready instantly."""
+        try:
+            check = db.get(chat_id)
+            if not check or len(check) < 2:
+                return
+            next_track = check[1]
+            next_file = next_track.get("file", "")
+            next_vid = next_track.get("vidid", "")
+            if "vid_" in next_file and not os.path.exists(next_file) and next_vid:
+                from shakky.platforms import YouTube as YT
+                LOGGER.info(f"Pre-downloading next track: {next_track.get('title', next_vid)}")
+                file_path, _ = await asyncio.wait_for(
+                    YT.download(next_vid, raw_query=next_track.get("title")),
+                    timeout=45
+                )
+                if file_path and os.path.exists(file_path):
+                    next_track["file"] = file_path
+                    LOGGER.info(f"Pre-download complete: {file_path}")
+        except asyncio.TimeoutError:
+            LOGGER.warning(f"Pre-download timed out for chat {chat_id}")
+        except Exception as e:
+            LOGGER.debug(f"Pre-download failed (non-critical): {e}")
 
     async def ping(self):
         pings = []
@@ -659,7 +705,12 @@ class Call(PyTgCalls):
         async def stream_end_handler1(client, update: Update):
             if not isinstance(update, StreamAudioEnded):
                 return
-            await self.change_stream(client, update.chat_id)
+            try:
+                await self.change_stream(client, update.chat_id)
+            except Exception as e:
+                LOGGER.error(f"Stream end handler failed for {update.chat_id}: {e}")
+                await self.stop_stream(update.chat_id)
+
 
 
 Nand = Call()

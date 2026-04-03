@@ -120,7 +120,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         await CallbackQuery.answer("Paused ⏸︎")
         await ani.pause_stream(chat_id)
         db[chat_id][0]["paused"] = True
-        await notify_webapp(chat_id, is_playing=False, action="pause")
+        await notify_webapp(chat_id, current_song=db[chat_id][0], queue=db.get(chat_id, [])[1:6], is_playing=False, action="pause")
         await CallbackQuery.message.reply_text(f"⏸︎ **Paused** by {mention}")
 
     elif command == "Resume":
@@ -129,7 +129,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         await CallbackQuery.answer("Resumed ▷")
         await ani.resume_stream(chat_id)
         db[chat_id][0]["paused"] = False
-        await notify_webapp(chat_id, is_playing=True, action="resume")
+        await notify_webapp(chat_id, current_song=db[chat_id][0], queue=db.get(chat_id, [])[1:6], is_playing=True, action="resume")
         await CallbackQuery.message.reply_text(f"▷ **Resumed** by {mention}")
 
     elif command == "Stop" or command == "End":
@@ -159,59 +159,15 @@ async def del_back_playlist(client, CallbackQuery, _):
         if chat_id not in db or not db[chat_id]:
             return await CallbackQuery.answer("➲ Queue is empty.", show_alert=True)
         await CallbackQuery.answer("Skipped ⏭︎")
-        await skip_and_play(chat_id)
+        await skip_and_play(chat_id, mention=mention)
         
         if not db.get(chat_id):
             await CallbackQuery.edit_message_text(f"⏭︎ **Skipped** by {mention}\n\n✧ Queue is now empty.")
         else:
-            current = db[chat_id][0]
-            from shakky.utils.inline.play import stream_markup as sm
-            from shakky.utils.thumbnails import get_thumb
-            from pyrogram.types import InputMediaPhoto
-            buttons = sm(_, chat_id)
-            
-            # Generate premium thumb
             try:
-                thumb = await get_thumb(
-                    current.get("vidid", "unknown"),
-                    current["title"],
-                    current.get("dur", "0:00"),
-                    current.get("by", "User"),
-                    chat_id,
-                    user_id=current.get("user_id")
-                )
+                await CallbackQuery.message.delete()
             except:
-                thumb = current.get("thumb") or "https://files.catbox.moe/5ni0on.jpg"
-
-            caption = (
-                f"▷ **Now Playing**\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✧ **Track:** `{current['title'][:30]}`\n"
-                f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                f"✧ **Skipped By:** {mention}"
-            )
-
-            try:
-                # Try to edit the media in the current message
-                await CallbackQuery.edit_message_media(
-                    media=InputMediaPhoto(media=thumb, caption=caption),
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-            except Exception:
-                try:
-                    # If edit fails, follow back by sending a new photo and deleting the old one
-                    await CallbackQuery.message.delete()
-                    await CallbackQuery.message.reply_photo(
-                        photo=thumb,
-                        caption=caption,
-                        reply_markup=InlineKeyboardMarkup(buttons)
-                    )
-                except:
-                    # Total fallback to text if everything fails
-                    try:
-                        await CallbackQuery.edit_message_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
-                    except:
-                        pass
+                pass
 
     elif command == "Loop":
         await CallbackQuery.answer("Loop set ↺")
@@ -274,6 +230,19 @@ async def markup_timer():
                     playing[0]["dur"],
                 )
                 await mystic.edit_reply_markup(reply_markup=InlineKeyboardMarkup(buttons))
+                
+                # Push sync payload to WebApp independently of clicks
+                from shakky.utils.webapp import notify_webapp
+                try:
+                    await notify_webapp(
+                        chat_id, 
+                        current_song=playing[0], 
+                        queue=playing[1:6], 
+                        is_playing=not playing[0].get("paused", False), 
+                        action="sync"
+                    )
+                except:
+                    pass
             except:
                 continue
 

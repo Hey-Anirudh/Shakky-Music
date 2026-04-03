@@ -18,9 +18,9 @@ async def skip(cli, message: Message, _, chat_id):
         return await message.reply_text("➲ **Queue is empty, nothing to skip.**")
 
     # Skip logic (pops current, starts next via change_stream)
-    await skip_and_play(chat_id)
+    await skip_and_play(chat_id, mention=message.from_user.mention)
     
-    # UI Feedback
+    # UI Feedback for empty queue
     if not db.get(chat_id):
         await message.reply_text(
             f"▷ **Track Skipped**\n"
@@ -28,43 +28,3 @@ async def skip(cli, message: Message, _, chat_id):
             f"✧ **Action By:** {message.from_user.mention}\n"
             f"✧ **Info:** Queue is now empty."
         )
-    else:
-        current = db[chat_id][0]
-        buttons = stream_markup(_, chat_id)
-        
-        # Generate custom thumbnail with PFPs
-        from shakky.utils.thumbnails import get_thumb
-        try:
-            thumb = await get_thumb(
-                current.get("vidid", "unknown"),
-                current["title"],
-                current.get("dur", "0:00"),
-                current.get("by", "User"),
-                chat_id,
-                user_id=current.get("user_id")
-            )
-        except:
-            thumb = current.get("thumb") or config.STREAM_IMG_URL
-            
-        try:
-            await app.send_photo(
-                chat_id,
-                photo=thumb,
-                caption=(
-                    f"▷ **Now Playing**\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"✧ **Track:** `{current['title'][:30]}`\n"
-                    f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                    f"✧ **Skipped By:** {message.from_user.mention}"
-                ),
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-        except Exception:
-            await message.reply_text(
-                f"▷ **Now Playing**\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✧ **Track:** `{current['title'][:30]}`\n"
-                f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                f"✧ **Skipped By:** {message.from_user.mention}",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )

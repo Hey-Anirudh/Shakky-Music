@@ -215,7 +215,7 @@ async def play_playlist(client, CallbackQuery, _):
     except Exception as e:
         ex_type = type(e).__name__
         err = (
-            e
+            str(e)
             if ex_type == "AssistantErr"
             else _["general_3"].format(ex_type)
         )
@@ -275,7 +275,7 @@ async def play_playlist_command(client, message, _):
     except Exception as e:
         ex_type = type(e).__name__
         err = (
-            e
+            str(e)
             if ex_type == "AssistantErr"
             else _["general_3"].format(ex_type)
         )

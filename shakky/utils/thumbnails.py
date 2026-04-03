@@ -4,12 +4,26 @@
 
 import os
 import io
+import asyncio
 import aiohttp
 import aiofiles
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import logging
+from concurrent.futures import ThreadPoolExecutor
 
 LOGGER = logging.getLogger(__name__)
+
+# Shared thread pool for CPU-bound PIL work (4 workers max)
+_thumb_executor = ThreadPoolExecutor(max_workers=4, thread_name_prefix="thumb")
+
+# Shared aiohttp session (initialized lazily)
+_http_session = None
+
+async def _get_session():
+    global _http_session
+    if _http_session is None or _http_session.closed:
+        _http_session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=8))
+    return _http_session
 
 STENCIL_PATH = "static/stencil.jpg"
 THUMB_CACHE = "downloads/thumbs"
@@ -59,14 +73,14 @@ def _draw_glow_ring(canvas: Image.Image, cx: int, cy: int, r: int, thick: int):
 
 
 async def _download_to_disk(url: str, path: str) -> bool:
-    """Download URL to disk. Returns True on success."""
+    """Download URL to disk using shared session. Returns True on success."""
     try:
-        async with aiohttp.ClientSession() as s:
-            async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
-                if r.status == 200:
-                    async with aiofiles.open(path, "wb") as f:
-                        await f.write(await r.read())
-                    return True
+        session = await _get_session()
+        async with session.get(url) as r:
+            if r.status == 200:
+                async with aiofiles.open(path, "wb") as f:
+                    await f.write(await r.read())
+                return True
     except Exception as e:
         LOGGER.warning(f"Download failed {url}: {e}")
     return False
@@ -147,6 +161,7 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
       - Two circular PFPs (requester left, bot right) with shadows & gold glow rings
       - SVG-style flat icon badges for music note & clock
       - Song title + duration text with drop shadows
+    PIL processing runs in a thread pool to avoid blocking the event loop.
     """
     output_path = os.path.join(THUMB_CACHE, f"{videoid}_{chat_id}.jpg")
     if os.path.isfile(output_path):
@@ -212,99 +227,106 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
         if bot_img is None:
             bot_img = Image.new("RGBA", (pfp_size, pfp_size), (200, 160, 50, 255))
 
-        # ── 4. Circular Crop ─────────────────────────────────────────────────────
-        req_circ = _make_circle(req_img,  pfp_size)
-        bot_circ = _make_circle(bot_img,  pfp_size)
-
-        # ── 5. Layout: two circles centred horizontally ──────────────────────────
-        gap     = int(pfp_size * 0.30)
-        total_w = pfp_size * 2 + gap
-        ox      = (W - total_w) // 2
-        pfp_y   = int(H * 0.26)
-
-        req_cx  = ox + pfp_size // 2
-        req_cy  = pfp_y + pfp_size // 2
-        bot_cx  = ox + pfp_size + gap + pfp_size // 2
-        bot_cy  = req_cy
-
-        # ── 6. Drop shadows ──────────────────────────────────────────────────────
-        _draw_shadow_ring(stencil, req_cx, req_cy, pfp_size // 2)
-        _draw_shadow_ring(stencil, bot_cx, bot_cy, pfp_size // 2)
-
-        # ── 7. Glow border rings ─────────────────────────────────────────────────
-        thick = max(5, pfp_size // 14)
-        _draw_glow_ring(stencil, req_cx, req_cy, pfp_size // 2, thick)
-        _draw_glow_ring(stencil, bot_cx, bot_cy, pfp_size // 2, thick)
-
-        # ── 8. Paste PFPs ────────────────────────────────────────────────────────
-        stencil.paste(req_circ, (ox,                       pfp_y), req_circ)
-        stencil.paste(bot_circ, (ox + pfp_size + gap,      pfp_y), bot_circ)
-
-        # ── 9. SVG-style icons (flat PNGs) as badge overlays ─────────────────────
+        # ── 4-11: Run CPU-bound PIL work in thread pool ────────────────────────
+        # Pre-download icons before entering the thread (async I/O)
         icon_sz = max(24, pfp_size // 5)
-
         music_icon = await _load_icon(ICON_MUSIC, icon_sz, "icon_music.png", tint=(230, 190, 70, 255))
         clock_icon = await _load_icon(ICON_CLOCK, icon_sz, "icon_clock.png", tint=(200, 220, 255, 255))
 
-        # Place music icon badge on bot circle (bottom-right corner of circle)
-        if music_icon:
-            mi_x = ox + pfp_size + gap + pfp_size - icon_sz + 4
-            mi_y = pfp_y + pfp_size - icon_sz + 4
-            stencil.paste(music_icon, (mi_x, mi_y), music_icon)
+        def _render_thumb():
+            """CPU-bound PIL rendering in thread pool."""
+            # Circular Crop
+            req_circ = _make_circle(req_img,  pfp_size)
+            bot_circ = _make_circle(bot_img,  pfp_size)
 
-        # ── 10. Convert to RGB for text ────────────────────────────────────────
-        out = stencil.convert("RGB")
-        draw = ImageDraw.Draw(out)
+            # Layout: two circles centred horizontally
+            gap     = int(pfp_size * 0.30)
+            total_w = pfp_size * 2 + gap
+            ox      = (W - total_w) // 2
+            pfp_y   = int(H * 0.26)
 
-        try:
-            fp = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-            if not os.path.exists(fp):
-                fp = "arial.ttf"
-            f_title = ImageFont.truetype(fp, int(H * 0.054))
-            f_info  = ImageFont.truetype(fp, int(H * 0.038))
-            f_label = ImageFont.truetype(fp, int(H * 0.030))
-        except Exception:
-            f_title = f_info = f_label = ImageFont.load_default()
+            req_cx  = ox + pfp_size // 2
+            req_cy  = pfp_y + pfp_size // 2
+            bot_cx  = ox + pfp_size + gap + pfp_size // 2
+            bot_cy  = req_cy
 
-        CREAM  = (255, 240, 200)
-        GOLD   = (220, 180, 65)
-        MUTED  = (190, 175, 145)
+            # Drop shadows
+            _draw_shadow_ring(stencil, req_cx, req_cy, pfp_size // 2)
+            _draw_shadow_ring(stencil, bot_cx, bot_cy, pfp_size // 2)
 
-        # Labels under circles
-        req_label = f"@{by[:12]}"
-        rb = draw.textbbox((0, 0), req_label, font=f_label)
-        _text_shadow(draw, (ox + (pfp_size - (rb[2]-rb[0])) // 2, pfp_y + pfp_size + 6), req_label, f_label, CREAM)
+            # Glow border rings
+            thick = max(5, pfp_size // 14)
+            _draw_glow_ring(stencil, req_cx, req_cy, pfp_size // 2, thick)
+            _draw_glow_ring(stencil, bot_cx, bot_cy, pfp_size // 2, thick)
 
-        bot_label = "Shakky Music"
-        bb = draw.textbbox((0, 0), bot_label, font=f_label)
-        _text_shadow(draw, (ox + pfp_size + gap + (pfp_size - (bb[2]-bb[0])) // 2, pfp_y + pfp_size + 6), bot_label, f_label, GOLD)
+            # Paste PFPs
+            stencil.paste(req_circ, (ox,                       pfp_y), req_circ)
+            stencil.paste(bot_circ, (ox + pfp_size + gap,      pfp_y), bot_circ)
 
-        # "VS" marker between
-        vs_x = ox + pfp_size + gap // 2 - 6
-        vs_y = pfp_y + pfp_size // 2 - int(H * 0.028)
-        _text_shadow(draw, (vs_x, vs_y), "VS", f_info, GOLD)
+            # Place music icon badge
+            if music_icon:
+                mi_x = ox + pfp_size + gap + pfp_size - icon_sz + 4
+                mi_y = pfp_y + pfp_size - icon_sz + 4
+                stencil.paste(music_icon, (mi_x, mi_y), music_icon)
 
-        # Song Title — centred
-        clean = (title[:24] + "...") if len(title) > 24 else title
-        cb = draw.textbbox((0, 0), clean.upper(), font=f_title)
-        title_y = pfp_y + pfp_size + int(H * 0.10)
-        _text_shadow(draw, ((W - (cb[2]-cb[0])) // 2, title_y), clean.upper(), f_title, CREAM)
+            # Convert to RGB for text
+            out = stencil.convert("RGB")
+            draw = ImageDraw.Draw(out)
 
-        # Duration line with clock icon inline
-        if clock_icon:
-            # Place clock icon inline
-            clock_pil = clock_icon.resize((int(H * 0.038), int(H * 0.038)), Image.LANCZOS)
-        dur_text = f"  {duration}    {by[:14]}"
-        db2 = draw.textbbox((0, 0), dur_text, font=f_info)
-        info_y = title_y + int(H * 0.075)
-        info_x = (W - (db2[2]-db2[0])) // 2
-        _text_shadow(draw, (info_x, info_y), dur_text, f_info, MUTED)
-        if clock_icon:
-            out.paste(clock_pil, (info_x - clock_pil.size[0] - 4, info_y), clock_pil)
+            try:
+                fp = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+                if not os.path.exists(fp):
+                    fp = "arial.ttf"
+                f_title = ImageFont.truetype(fp, int(H * 0.054))
+                f_info  = ImageFont.truetype(fp, int(H * 0.038))
+                f_label = ImageFont.truetype(fp, int(H * 0.030))
+            except Exception:
+                f_title = f_info = f_label = ImageFont.load_default()
 
-        # ── 11. Save ──────────────────────────────────────────────────────────────
-        out.save(output_path, "JPEG", quality=90)
-        return output_path
+            CREAM  = (255, 240, 200)
+            GOLD   = (220, 180, 65)
+            MUTED  = (190, 175, 145)
+
+            # Labels under circles
+            req_label = f"@{by[:12]}"
+            rb = draw.textbbox((0, 0), req_label, font=f_label)
+            _text_shadow(draw, (ox + (pfp_size - (rb[2]-rb[0])) // 2, pfp_y + pfp_size + 6), req_label, f_label, CREAM)
+
+            bot_label = "Shakky Music"
+            bb = draw.textbbox((0, 0), bot_label, font=f_label)
+            _text_shadow(draw, (ox + pfp_size + gap + (pfp_size - (bb[2]-bb[0])) // 2, pfp_y + pfp_size + 6), bot_label, f_label, GOLD)
+
+            # "VS" marker between
+            vs_x = ox + pfp_size + gap // 2 - 6
+            vs_y = pfp_y + pfp_size // 2 - int(H * 0.028)
+            _text_shadow(draw, (vs_x, vs_y), "VS", f_info, GOLD)
+
+            # Song Title — centred
+            clean = (title[:24] + "...") if len(title) > 24 else title
+            cb = draw.textbbox((0, 0), clean.upper(), font=f_title)
+            title_y = pfp_y + pfp_size + int(H * 0.10)
+            _text_shadow(draw, ((W - (cb[2]-cb[0])) // 2, title_y), clean.upper(), f_title, CREAM)
+
+            # Duration line with clock icon inline
+            clock_pil = None
+            if clock_icon:
+                clock_pil = clock_icon.resize((int(H * 0.038), int(H * 0.038)), Image.LANCZOS)
+            dur_text = f"  {duration}    {by[:14]}"
+            db2 = draw.textbbox((0, 0), dur_text, font=f_info)
+            info_y = title_y + int(H * 0.075)
+            info_x = (W - (db2[2]-db2[0])) // 2
+            _text_shadow(draw, (info_x, info_y), dur_text, f_info, MUTED)
+            if clock_pil:
+                out.paste(clock_pil, (info_x - clock_pil.size[0] - 4, info_y), clock_pil)
+
+            # Save
+            out.save(output_path, "JPEG", quality=85)
+            return output_path
+
+        # Run the CPU-bound rendering in thread pool
+        loop = asyncio.get_event_loop()
+        result = await loop.run_in_executor(_thumb_executor, _render_thumb)
+        return result
 
     except Exception as e:
         LOGGER.error(f"Error generating thumbnail: {e}", exc_info=True)

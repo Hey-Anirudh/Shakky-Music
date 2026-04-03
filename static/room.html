@@ -948,7 +948,7 @@
 
 <body>
 
-    <canvas id="snow-canvas" style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; opacity:0.6;"></canvas>
+    <canvas id="aurora-canvas" style="position:fixed; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:1; opacity:0.8;"></canvas>
 
     <div class="ambient">
         <div class="blob blob1"></div>
@@ -1437,11 +1437,12 @@
         function closeQueue() { document.getElementById('queue-sheet').classList.remove('open'); }
         function toggleListeners(show) { document.getElementById('listeners-modal').classList.toggle('open', show); }
 
-        /* ── Snowflake Engine (Wow Factor) ── */
+        /* ── Aurora Engine (Wow Factor) ── */
         (function() {
-            const canvas = document.getElementById('snow-canvas');
+            const canvas = document.getElementById('aurora-canvas');
             const ctx = canvas.getContext('2d');
-            let w, h, particles = [];
+            let w, h;
+            let time = 0;
 
             function resize() {
                 w = canvas.width = window.innerWidth;
@@ -1449,37 +1450,43 @@
             }
             window.addEventListener('resize', resize);
             resize();
-
-            class Particle {
-                constructor() {
-                    this.x = Math.random() * w;
-                    this.y = Math.random() * h;
-                    this.size = Math.random() * 2 + 1;
-                    this.speedX = Math.random() * 0.5 - 0.25;
-                    this.speedY = Math.random() * 1 + 0.5;
-                    this.opacity = Math.random() * 0.5 + 0.3;
-                }
-                update() {
-                    this.y += this.speedY;
-                    this.x += this.speedX;
-                    if (this.y > h) {
-                        this.y = -10;
-                        this.x = Math.random() * w;
-                    }
-                }
-                draw() {
-                    ctx.fillStyle = `rgba(255, 255, 255, ${this.opacity})`;
-                    ctx.beginPath();
-                    ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-
-            for(let i=0; i<80; i++) particles.push(new Particle());
+            
+            const ribbons = [
+                { color: [22, 219, 147], amp: 100, freq: 0.0015, speed: 0.005, yOffset: 0.2 }, // Green
+                { color: [168, 85, 247], amp: 130, freq: 0.0010, speed: 0.007, yOffset: 0.3 }, // Purple
+                { color: [56, 189, 248], amp: 80, freq: 0.0025, speed: 0.004, yOffset: 0.15 }  // Blue
+            ];
 
             function animate() {
                 ctx.clearRect(0,0,w,h);
-                particles.forEach(p => { p.update(); p.draw(); });
+                ctx.globalCompositeOperation = 'lighter';
+                
+                ribbons.forEach((r, i) => {
+                    ctx.beginPath();
+                    
+                    let startY = h * r.yOffset;
+                    ctx.moveTo(0, h);
+                    
+                    for(let x = 0; x <= w + 40; x += 40) {
+                        let y = startY + Math.sin(x * r.freq + time * r.speed) * r.amp 
+                                     + Math.cos(x * r.freq * 1.5 - time * r.speed * 1.2) * (r.amp * 0.5);
+                        ctx.lineTo(x, y);
+                    }
+                    
+                    ctx.lineTo(w, h);
+                    ctx.closePath();
+                    
+                    let grad = ctx.createLinearGradient(0, startY - r.amp * 2, 0, h);
+                    grad.addColorStop(0, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0)`);
+                    grad.addColorStop(0.3, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0.4)`);
+                    grad.addColorStop(0.7, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0.15)`);
+                    grad.addColorStop(1, `rgba(${r.color[0]}, ${r.color[1]}, ${r.color[2]}, 0)`);
+                    
+                    ctx.fillStyle = grad;
+                    ctx.fill();
+                });
+                
+                time += 1;
                 requestAnimationFrame(animate);
             }
             animate();

@@ -1,4 +1,5 @@
-﻿import os
+import os
+import asyncio
 from random import randint
 import logging
 import traceback
@@ -38,7 +39,7 @@ async def stream(
     if forceplay:
         await ani.stop_stream_force(chat_id)
         db[chat_id] = []
-        await notify_webapp(chat_id, is_playing=False, action="stop")
+        asyncio.create_task(_notify_safe(chat_id, is_playing=False, action="stop"))
 
     if streamtype == "youtube":
         vidid = result.get("vidid")
@@ -49,9 +50,15 @@ async def stream(
         status = True if video else None
         
         try:
-            file_path, direct = await YouTube.download(
-                vidid, mystic, videoid=True, video=status, raw_query=raw_query or title
+            file_path, direct = await asyncio.wait_for(
+                YouTube.download(
+                    vidid, mystic, videoid=True, video=status, raw_query=raw_query or title
+                ),
+                timeout=45
             )
+        except asyncio.TimeoutError:
+            logger.error(f"Download timed out for {vidid}")
+            raise AssistantErr("➲ **Download timed out. Try again.**")
         except Exception as e:
             logger.error(f"Download failed: {e}")
             raise AssistantErr("➲ **Failed to download track.**")
@@ -75,6 +82,8 @@ async def stream(
                 text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**By:** {user_name}",
                 reply_markup=InlineKeyboardMarkup(button),
             )
+            # Pre-download this queued track in background
+            asyncio.create_task(_predownload_queued(chat_id, position))
         else:
             await put_queue(
                 chat_id,
@@ -100,42 +109,87 @@ async def stream(
             current = db[chat_id][0]
             current["start_time"] = time.time()
             
-            # Generate custom thumbnail
-            try:
-                thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id, user_id=user_id)
-                current["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
-            except Exception as e:
-                logger.error(f"Thumbnail generation error: {e}")
-                thumb_path = config.STREAM_IMG_URL
-                
-            await notify_webapp(chat_id, current_song=current, queue=db[chat_id][1:], action="play")
-            
-            button = stream_markup(_, chat_id)
-            msg_text = (
-                f"▷ **Now Playing**\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✧ **Track:** `{title[:28]}`\n"
-                f"✧ **Duration:** `{duration_min}`\n"
-                f"✧ **By:** {user_name}"
+            # Fire thumbnail + Now Playing in background for instant response
+            asyncio.create_task(
+                _send_initial_now_playing(
+                    chat_id, vidid, title, duration_min, user_name, user_id,
+                    original_chat_id, _
+                )
             )
-            if str(thumb_path).startswith("http"):
-                run = await app.send_message(
-                    original_chat_id,
-                    text=msg_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-            else:
-                run = await app.send_photo(
-                    original_chat_id,
-                    photo=thumb_path,
-                    caption=msg_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "stream"
             
     # Other streamtypes (soundcloud, telegram, index, live) follow same pattern...
-    # For brevity in this contiguous update, focusing on the main Youtube flow.
+
+async def _notify_safe(chat_id, **kwargs):
+    """Fire-and-forget webapp notification."""
+    try:
+        await notify_webapp(chat_id, **kwargs)
+    except Exception as e:
+        logger.warning(f"WebApp notify failed: {e}")
+
+async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _):
+    """Generate thumbnail and send Now Playing for initial play (background)."""
+    try:
+        current = db[chat_id][0]
+        
+        # Generate custom thumbnail
+        try:
+            thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id, user_id=user_id)
+            current["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
+        except Exception as e:
+            logger.error(f"Thumbnail generation error: {e}")
+            thumb_path = config.STREAM_IMG_URL
+            
+        # Notify webapp in background
+        asyncio.create_task(_notify_safe(chat_id, current_song=current, queue=db[chat_id][1:], action="play"))
+        
+        button = stream_markup(_, chat_id)
+        msg_text = (
+            f"▷ **Now Playing**\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✧ **Track:** `{title[:28]}`\n"
+            f"✧ **Duration:** `{duration_min}`\n"
+            f"✧ **By:** {user_name}"
+        )
+        if str(thumb_path).startswith("http"):
+            run = await app.send_message(
+                original_chat_id,
+                text=msg_text,
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+        else:
+            run = await app.send_photo(
+                original_chat_id,
+                photo=thumb_path,
+                caption=msg_text,
+                reply_markup=InlineKeyboardMarkup(button),
+            )
+        db[chat_id][0]["mystic"] = run
+        db[chat_id][0]["markup"] = "stream"
+    except Exception as e:
+        logger.error(f"Failed to send initial Now Playing: {e}")
+
+async def _predownload_queued(chat_id, position):
+    """Pre-download a queued track in background so it's ready when needed."""
+    try:
+        check = db.get(chat_id)
+        if not check or position >= len(check):
+            return
+        track = check[position]
+        track_file = track.get("file", "")
+        track_vid = track.get("vidid", "")
+        if "vid_" in track_file and not os.path.exists(track_file) and track_vid:
+            logger.info(f"Pre-downloading queued track #{position}: {track.get('title', track_vid)}")
+            file_path, _ = await asyncio.wait_for(
+                YouTube.download(track_vid, raw_query=track.get("title")),
+                timeout=45
+            )
+            if file_path and os.path.exists(file_path):
+                track["file"] = file_path
+                logger.info(f"Pre-download complete for queue #{position}: {file_path}")
+    except asyncio.TimeoutError:
+        logger.warning(f"Pre-download timed out for queue #{position}")
+    except Exception as e:
+        logger.debug(f"Pre-download failed (non-critical): {e}")
 
 async def put_queue(
     chat_id,
@@ -178,7 +232,7 @@ async def put_queue(
     else:
         db[chat_id].append(song_info)
 
-async def skip_and_play(chat_id):
+async def skip_and_play(chat_id, mention=None):
     if chat_id not in db or not db[chat_id]:
         await ani.stop_stream(chat_id)
         return
@@ -188,7 +242,8 @@ async def skip_and_play(chat_id):
     try:
         from shakky.utils.database import group_assistant
         assistant = await group_assistant(ani, chat_id)
-        await ani.change_stream(assistant, chat_id)
+        await ani.change_stream(assistant, chat_id, mention=mention)
     except Exception as e:
         logger.error(f"Error in skip_and_play: {e}")
         await ani.stop_stream(chat_id)
+
