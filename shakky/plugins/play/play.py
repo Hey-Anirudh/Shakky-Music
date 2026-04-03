@@ -46,11 +46,60 @@ async def play_commnd(client, message: Message, _):
     if len(message.command) < 2:
         return await message.reply_text("➲ **Please provide a song name or link to play.**")
 
-    query = message.text.split(None, 1)[1]
+    query = message.text.split(None, 1)[1] if len(message.command) > 1 else None
     
-    # Step 1: Send Loading Message
-    mystic = await message.reply_text(f"🔍 Searching for: **{query}**...")
-    
+    # --- Telegram Media (Reply) Detection ---
+    if message.reply_to_message:
+        if message.reply_to_message.audio or message.reply_to_message.voice or message.reply_to_message.video:
+            mystic = await message.reply_text("➲ **Processing Telegram Media...**")
+            user_id = message.from_user.id
+            user_name = message.from_user.first_name
+            chat_id = message.chat.id
+            forceplay = "force" in message.command[0]
+            
+            try:
+                await stream(
+                    _, mystic, user_id, message.reply_to_message, chat_id, user_name, chat_id,
+                    streamtype="telegram", forceplay=forceplay
+                )
+                return
+            except Exception as e:
+                return await mystic.edit_text(f"❌ Telegram Media Error: {e}")
+
+    if not query:
+        return await message.reply_text("➲ **Please provide a song name or link to play.**")
+
+    # --- Spotify Link Detection ---
+    from shakky import Spotify
+    if await Spotify.valid(query):
+        if "track" in query:
+            try:
+                res, vidid = await Spotify.track(query)
+                await stream(
+                    _, mystic, user_id, res, chat_id, user_name, chat_id,
+                    streamtype="spotify", spotify=True, forceplay=forceplay
+                )
+                return
+            except Exception as e:
+                return await mystic.edit_text(f"❌ Spotify Error: {e}")
+        elif "playlist" in query or "album" in query or "artist" in query:
+             try:
+                 if "playlist" in query:
+                     result, spotify_id = await Spotify.playlist(query)
+                 elif "album" in query:
+                     result, spotify_id = await Spotify.album(query)
+                 else:
+                     result, spotify_id = await Spotify.artist(query)
+                 
+                 await stream(
+                     _, mystic, user_id, result, chat_id, user_name, chat_id,
+                     streamtype="spotify", spotify=True, forceplay=forceplay
+                 )
+                 return
+             except Exception as e:
+                 return await mystic.edit_text(f"❌ Spotify Batch Error: {e}")
+
+    # --- YouTube Logic ---
     try:
         # Step 1: YouTube Search (metadata only)
         result = await YouTube.search(query)

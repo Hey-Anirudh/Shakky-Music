@@ -133,6 +133,99 @@ async def stream(
                     )
                 )
         
+        elif streamtype == "spotify":
+            if isinstance(result, list):
+                # result is a list of track names (e.g. ['SongArtist', ...])
+                await mystic.edit_text(f"➲ **Adding {len(result)} tracks from Spotify Playlist...**")
+                
+                for i, track_name in enumerate(result):
+                    # We queue them as vid_sp_SEARCHTERM to resolve on-play
+                    await put_queue(
+                        chat_id,
+                        original_chat_id,
+                        f"vid_sp_{track_name}", 
+                        track_name,
+                        "0:00",
+                        user_name,
+                        None,
+                        user_id,
+                        "audio",
+                    )
+                    
+                    # Optimization: Resolve first song NOW if idle
+                    if i == 0 and not await is_active_chat(chat_id):
+                         try:
+                             from shakky import YouTube
+                             search_res = await YouTube.search(track_name)
+                             if search_res:
+                                 db[chat_id][0].update({
+                                     "file": f"vid_{search_res['vidid']}",
+                                     "vidid": search_res['vidid'],
+                                     "dur": search_res['duration']
+                                 })
+                         except: pass
+
+                if not await is_active_chat(chat_id):
+                    # Start playback if idle
+                    from shakky.core.call import ani
+                    first = db[chat_id][0]
+                    await ani.join_call(chat_id, original_chat_id, first["file"], video=status)
+                    first["start_time"] = time.time()
+                    asyncio.create_task(_send_initial_now_playing(chat_id, first.get("vidid"), first["title"], first["dur"], user_name, user_id, original_chat_id, _))
+                else:
+                    await mystic.edit_text(f"➲ **Queued {len(result)} Spotify tracks at #{len(db[chat_id]) - len(result)}!**")
+                return
+
+            else:
+                # Single track mode (result is a dict)
+                # We leverage the youtube block by rewriting result/streamtype
+                vidid = result.get("vidid")
+                title = str(result.get("title", "Unknown")).title()
+                duration_min = result.get("duration_min", "0:00")
+                thumbnail = result.get("thumb", "")
+                status = True if video else None
+                
+                file_path, direct = await YouTube.download(vidid, mystic, video=status, raw_query=title)
+                
+                if await is_active_chat(chat_id):
+                    await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
+                    position = len(db.get(chat_id)) - 1
+                    await app.send_message(original_chat_id, text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
+                else:
+                    await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
+                    await ani.join_call(chat_id, original_chat_id, file_path, video=status, image=thumbnail)
+                    db[chat_id][0]["start_time"] = time.time()
+                    asyncio.create_task(_send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _))
+                return
+
+        elif streamtype == "telegram":
+            from shakky import Telegram
+            audio = result.audio or result.voice
+            video = result.video
+            status = True if video else None
+            
+            file_name = await Telegram.get_filepath(audio=audio, video=video)
+            title = await Telegram.get_filename(audio or video, audio=True if audio else False)
+            duration_min = await Telegram.get_duration(audio or video, file_name)
+            thumbnail = config.STREAM_IMG_URL
+
+            if not os.path.exists(file_name):
+                await mystic.edit_text(f"➲ **Downloading Telegram File...**\n📂 **Track:** {title[:25]}")
+                downloaded = await Telegram.download(_, result, mystic, file_name)
+                if not downloaded:
+                    return await mystic.edit_text("❌ **Failed to download the Telegram file.**")
+
+            if await is_active_chat(chat_id):
+                await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
+                position = len(db.get(chat_id)) - 1
+                await app.send_message(original_chat_id, text=f"➲ **Added Telegram File to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
+            else:
+                await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
+                await ani.join_call(chat_id, original_chat_id, file_name, video=status, image=thumbnail)
+                db[chat_id][0]["start_time"] = time.time()
+                asyncio.create_task(_send_initial_now_playing(chat_id, None, title, duration_min, user_name, user_id, original_chat_id, _))
+            return
+        
         # NOTE: If adding more streamtypes, they should also stay inside this 'async with lock' block
 
 async def _notify_safe(chat_id, **kwargs):

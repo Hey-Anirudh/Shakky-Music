@@ -510,6 +510,17 @@ class Call(PyTgCalls):
 
             # --- JIT Download for vid_ references (with 30s timeout) ---
             if "vid_" in queued:
+                # Resolve Spotify tracks first if needed
+                if "vid_sp_" in queued and not videoid:
+                    try:
+                        from shakky import YouTube as YT
+                        search_res = await YT.search(title)
+                        if search_res:
+                            videoid = search_res["vidid"]
+                            db[chat_id][0]["vidid"] = videoid
+                            db[chat_id][0]["dur"] = search_res["duration"]
+                    except: pass
+
                 if not os.path.exists(queued) and videoid:
                     try:
                         from shakky.platforms import YouTube as YT
