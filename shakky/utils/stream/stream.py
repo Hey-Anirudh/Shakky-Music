@@ -112,7 +112,7 @@ async def stream(
             
             button = stream_markup(_, chat_id)
             msg_text = (
-                f"✦ **NOW PLAYING**\n"
+                f"▷ **Now Playing**\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"✧ **Track:** `{title[:28]}`\n"
                 f"✧ **Duration:** `{duration_min}`\n"

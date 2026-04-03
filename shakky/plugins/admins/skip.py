@@ -23,7 +23,7 @@ async def skip(cli, message: Message, _, chat_id):
     # UI Feedback
     if not db.get(chat_id):
         await message.reply_text(
-            f"✦ **TRACK SKIPPED**\n"
+            f"▷ **Track Skipped**\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"✧ **Action By:** {message.from_user.mention}\n"
             f"✧ **Info:** Queue is now empty."
@@ -39,7 +39,7 @@ async def skip(cli, message: Message, _, chat_id):
                 chat_id,
                 photo=thumb,
                 caption=(
-                    f"✦ **NOW PLAYING**\n"
+                    f"▷ **Now Playing**\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"✧ **Track:** `{current['title']}`\n"
                     f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
@@ -53,7 +53,7 @@ async def skip(cli, message: Message, _, chat_id):
                     chat_id,
                     photo=config.STREAM_IMG_URL,
                     caption=(
-                        f"✦ **NOW PLAYING**\n"
+                        f"▷ **Now Playing**\n"
                         f"━━━━━━━━━━━━━━━━━━\n"
                         f"✧ **Track:** `{current['title']}`\n"
                         f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
@@ -63,7 +63,7 @@ async def skip(cli, message: Message, _, chat_id):
                 )
             except Exception:
                 await message.reply_text(
-                    f"✦ **NOW PLAYING**\n"
+                    f"▷ **Now Playing**\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
                     f"✧ **Track:** `{current['title']}`\n"
                     f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"

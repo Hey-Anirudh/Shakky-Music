@@ -72,16 +72,16 @@ def stream_markup_timer(_, chat_id, played, dur):
             )
         ],
         [
-            InlineKeyboardButton(text="▶", callback_data=f"ADMIN Resume|{chat_id}"),
-            InlineKeyboardButton(text="⏸", callback_data=f"ADMIN Pause|{chat_id}"),
-            InlineKeyboardButton(text="⏭", callback_data=f"ADMIN Skip|{chat_id}"),
-            InlineKeyboardButton(text="⏹", callback_data=f"ADMIN Stop|{chat_id}"),
+            InlineKeyboardButton(text="▷", callback_data=f"ADMIN Resume|{chat_id}"),
+            InlineKeyboardButton(text="⏸︎", callback_data=f"ADMIN Pause|{chat_id}"),
+            InlineKeyboardButton(text="⏭︎", callback_data=f"ADMIN Skip|{chat_id}"),
+            InlineKeyboardButton(text="⏹︎", callback_data=f"ADMIN Stop|{chat_id}"),
         ],
         [
-            InlineKeyboardButton(text="🎧 Join Room", url=_join_room_url(chat_id)),
+            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="✖ Close", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
@@ -103,16 +103,16 @@ def telegram_markup_timer(_, chat_id, played, dur):
             )
         ],
         [
-            InlineKeyboardButton(text="▶", callback_data=f"ADMIN Resume|{chat_id}"),
-            InlineKeyboardButton(text="⏸", callback_data=f"ADMIN Pause|{chat_id}"),
-            InlineKeyboardButton(text="⏭", callback_data=f"ADMIN Skip|{chat_id}"),
-            InlineKeyboardButton(text="⏹", callback_data=f"ADMIN Stop|{chat_id}"),
+            InlineKeyboardButton(text="▷", callback_data=f"ADMIN Resume|{chat_id}"),
+            InlineKeyboardButton(text="⏸︎", callback_data=f"ADMIN Pause|{chat_id}"),
+            InlineKeyboardButton(text="⏭︎", callback_data=f"ADMIN Skip|{chat_id}"),
+            InlineKeyboardButton(text="⏹︎", callback_data=f"ADMIN Stop|{chat_id}"),
         ],
         [
-            InlineKeyboardButton(text="🎧 Join Room", url=_join_room_url(chat_id)),
+            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="✖ Close", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
@@ -120,16 +120,16 @@ def telegram_markup_timer(_, chat_id, played, dur):
 def stream_markup(_, chat_id):
     buttons = [
         [
-            InlineKeyboardButton(text="▶", callback_data=f"ADMIN Resume|{chat_id}"),
-            InlineKeyboardButton(text="⏸", callback_data=f"ADMIN Pause|{chat_id}"),
-            InlineKeyboardButton(text="⏭", callback_data=f"ADMIN Skip|{chat_id}"),
-            InlineKeyboardButton(text="⏹", callback_data=f"ADMIN Stop|{chat_id}"),
+            InlineKeyboardButton(text="▷", callback_data=f"ADMIN Resume|{chat_id}"),
+            InlineKeyboardButton(text="⏸︎", callback_data=f"ADMIN Pause|{chat_id}"),
+            InlineKeyboardButton(text="⏭︎", callback_data=f"ADMIN Skip|{chat_id}"),
+            InlineKeyboardButton(text="⏹︎", callback_data=f"ADMIN Stop|{chat_id}"),
         ],
         [
-            InlineKeyboardButton(text="🎧 Join Room", url=_join_room_url(chat_id)),
+            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="✖ Close", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
@@ -206,16 +206,16 @@ def slider_markup(_, videoid, user_id, query, query_type, channel, fplay):
 def telegram_markup(_, chat_id):
     buttons = [
         [
-            InlineKeyboardButton(text="▶", callback_data=f"ADMIN Resume|{chat_id}"),
-            InlineKeyboardButton(text="⏸", callback_data=f"ADMIN Pause|{chat_id}"),
-            InlineKeyboardButton(text="⏭", callback_data=f"ADMIN Skip|{chat_id}"),
-            InlineKeyboardButton(text="⏹", callback_data=f"ADMIN Stop|{chat_id}"),
+            InlineKeyboardButton(text="▷", callback_data=f"ADMIN Resume|{chat_id}"),
+            InlineKeyboardButton(text="⏸︎", callback_data=f"ADMIN Pause|{chat_id}"),
+            InlineKeyboardButton(text="⏭︎", callback_data=f"ADMIN Skip|{chat_id}"),
+            InlineKeyboardButton(text="⏹︎", callback_data=f"ADMIN Stop|{chat_id}"),
         ],
         [
-            InlineKeyboardButton(text="🎧 Join Room", url=_join_room_url(chat_id)),
+            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="✖ Close", callback_data="close"),
+            InlineKeyboardButton(text="✕", callback_data="close"),
         ],
     ]
     return buttons
@@ -224,16 +224,16 @@ def telegram_markup(_, chat_id):
 def queue_markup(_, videoid, chat_id):
     buttons = [
         [
-            InlineKeyboardButton(text="▶", callback_data=f"ADMIN Resume|{chat_id}"),
-            InlineKeyboardButton(text="⏸", callback_data=f"ADMIN Pause|{chat_id}"),
-            InlineKeyboardButton(text="⏭", callback_data=f"ADMIN Skip|{chat_id}"),
-            InlineKeyboardButton(text="⏹", callback_data=f"ADMIN Stop|{chat_id}"),
+            InlineKeyboardButton(text="▷", callback_data=f"ADMIN Resume|{chat_id}"),
+            InlineKeyboardButton(text="⏸︎", callback_data=f"ADMIN Pause|{chat_id}"),
+            InlineKeyboardButton(text="⏭︎", callback_data=f"ADMIN Skip|{chat_id}"),
+            InlineKeyboardButton(text="⏹︎", callback_data=f"ADMIN Stop|{chat_id}"),
         ],
         [
-            InlineKeyboardButton(text="🎧 Join Room", url=_join_room_url(chat_id)),
+            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="✖ Close", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons

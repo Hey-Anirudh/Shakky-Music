@@ -1,9 +1,9 @@
 # Thumbnail generation logic for Shakky Music
 # Design: Stencil + Heavy Smoke + Two Circular PFPs (Requester & Bot) + Song Info
+# Uses SVG-style flat icons (downloaded PNG) instead of emoji
 
 import os
 import io
-import math
 import aiohttp
 import aiofiles
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -16,53 +16,134 @@ THUMB_CACHE = "downloads/thumbs"
 
 os.makedirs(THUMB_CACHE, exist_ok=True)
 
+# Flat SVG-style icon URLs (small transparent PNGs from a reliable CDN)
+ICON_MUSIC   = "https://cdn-icons-png.flaticon.com/64/727/727218.png"   # music note
+ICON_CLOCK   = "https://cdn-icons-png.flaticon.com/64/2088/2088617.png" # clock
+ICON_USER    = "https://cdn-icons-png.flaticon.com/64/1077/1077012.png" # person silhouette
+
+
+# ─────────────────────────────────────────────────────────────────
+# helpers
+# ─────────────────────────────────────────────────────────────────
 
 def _make_circle(img: Image.Image, size: int) -> Image.Image:
-    """Resize image to a perfect circle with anti-aliased mask."""
+    """Crop & resize to a perfect anti-aliased circle."""
     img = img.convert("RGBA").resize((size, size), Image.LANCZOS)
     mask = Image.new("L", (size, size), 0)
-    draw = ImageDraw.Draw(mask)
-    draw.ellipse((0, 0, size - 1, size - 1), fill=255)
+    ImageDraw.Draw(mask).ellipse((0, 0, size - 1, size - 1), fill=255)
     result = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     result.paste(img, (0, 0), mask)
     return result
 
 
-def _draw_circle_shadow(canvas: Image.Image, cx: int, cy: int, r: int, blur: int = 16, color=(0, 0, 0, 180)):
-    """Draw a blurred circular drop shadow at position (cx, cy) with radius r."""
-    shadow_size = (r * 2 + blur * 4, r * 2 + blur * 4)
-    shadow = Image.new("RGBA", shadow_size, (0, 0, 0, 0))
-    sd = ImageDraw.Draw(shadow)
-    pad = blur * 2
-    sd.ellipse((pad, pad, pad + r * 2, pad + r * 2), fill=color)
-    shadow = shadow.filter(ImageFilter.GaussianBlur(blur))
-    canvas.paste(shadow, (cx - r - pad, cy - r - pad), shadow)
+def _draw_shadow_ring(canvas: Image.Image, cx: int, cy: int, r: int):
+    """Blurred black drop shadow behind the circle."""
+    blur = 20
+    pad  = blur * 2
+    s = Image.new("RGBA", (r * 2 + pad * 2, r * 2 + pad * 2), (0, 0, 0, 0))
+    ImageDraw.Draw(s).ellipse((pad, pad, pad + r * 2, pad + r * 2), fill=(0, 0, 0, 210))
+    s = s.filter(ImageFilter.GaussianBlur(blur))
+    canvas.paste(s, (cx - r - pad, cy - r - pad), s)
 
 
-async def _fetch_image(url: str, cache_path: str) -> str | None:
-    """Download image to cache_path, return path or None on failure."""
+def _draw_glow_ring(canvas: Image.Image, cx: int, cy: int, r: int, thick: int):
+    """Glowing gold ring border around the circle."""
+    ring = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    d    = ImageDraw.Draw(ring)
+    x0, y0 = cx - r - thick, cy - r - thick
+    x1, y1 = cx + r + thick, cy + r + thick
+    d.ellipse((x0, y0, x1, y1), fill=(230, 190, 70, 200))           # gold outer
+    d.ellipse((x0 + thick, y0 + thick, x1 - thick, y1 - thick), fill=(0, 0, 0, 0))  # hollow
+    ring = ring.filter(ImageFilter.GaussianBlur(4))
+    canvas.alpha_composite(ring)
+
+
+async def _download_to_disk(url: str, path: str) -> bool:
+    """Download URL to disk. Returns True on success."""
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, timeout=aiohttp.ClientTimeout(total=6)) as resp:
-                if resp.status == 200:
-                    async with aiofiles.open(cache_path, "wb") as f:
-                        await f.write(await resp.read())
-                    return cache_path
+        async with aiohttp.ClientSession() as s:
+            async with s.get(url, timeout=aiohttp.ClientTimeout(total=8)) as r:
+                if r.status == 200:
+                    async with aiofiles.open(path, "wb") as f:
+                        await f.write(await r.read())
+                    return True
     except Exception as e:
-        LOGGER.warning(f"Failed to fetch image {url}: {e}")
+        LOGGER.warning(f"Download failed {url}: {e}")
+    return False
+
+
+async def _get_tg_pfp(tg_client, user_id: int, cache_name: str) -> Image.Image | None:
+    """
+    Download a Telegram profile photo using Pyrogram 2 async iteration.
+    Returns PIL Image or None.
+    """
+    cache_path = os.path.join(THUMB_CACHE, cache_name)
+    if os.path.exists(cache_path):
+        try:
+            return Image.open(cache_path).convert("RGBA")
+        except Exception:
+            pass
+
+    try:
+        photo = None
+        async for p in tg_client.get_profile_photos(user_id, limit=1):
+            photo = p
+            break
+
+        if photo is None:
+            return None
+
+        # Download to a temp path (most reliable across Pyrogram versions)
+        tmp = cache_path + ".tmp"
+        dl = await tg_client.download_media(photo, file_name=tmp)
+        if dl and os.path.exists(tmp):
+            os.rename(tmp, cache_path)
+            return Image.open(cache_path).convert("RGBA")
+    except Exception as e:
+        LOGGER.warning(f"Could not fetch PFP for {user_id}: {e}")
+
     return None
 
+
+async def _load_icon(url: str, size: int, cache_name: str, tint=None) -> Image.Image | None:
+    """Download a flat PNG icon, tint it, resize to (size x size)."""
+    cache_path = os.path.join(THUMB_CACHE, cache_name)
+    if not os.path.exists(cache_path):
+        ok = await _download_to_disk(url, cache_path)
+        if not ok:
+            return None
+    try:
+        icon = Image.open(cache_path).convert("RGBA").resize((size, size), Image.LANCZOS)
+        if tint:
+            # Colour the icon (keep alpha, recolour RGB)
+            r, g, b, a = icon.split()
+            coloured = Image.new("RGBA", icon.size, tint)
+            coloured.putalpha(a)
+            return coloured
+        return icon
+    except Exception as e:
+        LOGGER.warning(f"Icon load failed: {e}")
+        return None
+
+
+def _text_shadow(draw, pos, text, font, fill, shadow=(0, 0, 0)):
+    draw.text((pos[0] + 2, pos[1] + 2), text, font=font, fill=shadow)
+    draw.text(pos, text, font=font, fill=fill)
+
+
+# ─────────────────────────────────────────────────────────────────
+# main entry point
+# ─────────────────────────────────────────────────────────────────
 
 async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
     """
     Generates a custom wanted-poster style thumbnail.
-    - Stencil base with heavy smoke overlay
-    - Two circular profile pictures (requester & bot) in the center with shadows
-    - Song info text below
+      - Stencil base + heavy multi-layer smoke
+      - Two circular PFPs (requester left, bot right) with shadows & gold glow rings
+      - SVG-style flat icon badges for music note & clock
+      - Song title + duration text with drop shadows
     """
     output_path = os.path.join(THUMB_CACHE, f"{videoid}_{chat_id}.jpg")
-
-    # Return cached version if it exists
     if os.path.isfile(output_path):
         return output_path
 
@@ -72,162 +153,136 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
             return "https://files.catbox.moe/5ni0on.jpg"
 
         stencil = Image.open(STENCIL_PATH).convert("RGBA")
-        width, height = stencil.size
+        W, H    = stencil.size
 
-        # ── 2. Heavy Smoke Overlay ───────────────────────────────────────────────
-        # Multi-layer smoke for depth: base dark haze + brownish vignette
-        smoke1 = Image.new("RGBA", stencil.size, (10, 5, 2, 130))  # deep dark haze
-        smoke2 = Image.new("RGBA", stencil.size, (35, 18, 8, 70))  # warm brownish tint
-        stencil = Image.alpha_composite(stencil, smoke1)
-        stencil = Image.alpha_composite(stencil, smoke2)
+        # ── 2. Heavy Smoke (multi-layer) ─────────────────────────────────────────
+        stencil = Image.alpha_composite(stencil, Image.new("RGBA", stencil.size, (8,  4,  2, 140)))  # dark haze
+        stencil = Image.alpha_composite(stencil, Image.new("RGBA", stencil.size, (40, 20, 8,  80)))  # warm tint
+        stencil = Image.alpha_composite(stencil, Image.new("RGBA", stencil.size, (0,  0,  0,  40)))  # extra depth
 
-        # Radial "torch light" brighten in center to make PFPs pop
-        radial = Image.new("RGBA", stencil.size, (0, 0, 0, 0))
-        rd = ImageDraw.Draw(radial)
-        cx_r, cy_r = width // 2, int(height * 0.45)
-        for i in range(80, 0, -1):
-            alpha = int(30 * (1 - i / 80))
-            rd.ellipse(
-                (cx_r - i * 3, cy_r - i * 2, cx_r + i * 3, cy_r + i * 2),
-                fill=(255, 230, 180, alpha)
-            )
-        stencil = Image.alpha_composite(stencil, radial)
+        # Radial centre spotlight so PFPs are visible
+        spot = Image.new("RGBA", stencil.size, (0, 0, 0, 0))
+        sd   = ImageDraw.Draw(spot)
+        cxs, cys = W // 2, int(H * 0.42)
+        for i in range(90, 0, -1):
+            a = int(22 * (1 - i / 90))
+            sd.ellipse((cxs - i*3, cys - i*2, cxs + i*3, cys + i*2), fill=(255, 220, 160, a))
+        stencil = Image.alpha_composite(stencil, spot)
 
-        # ── 3. Fetch Profile Pictures ────────────────────────────────────────────
-        pfp_size = int(min(width, height) * 0.22)  # circle diameter
+        # ── 3. Get Telegram PFPs ─────────────────────────────────────────────────
+        from shakky import app as bot_app
 
-        # Requester PFP (from Telegram by user_id)
-        req_pfp = None
+        pfp_size = int(min(W, H) * 0.22)
+
+        req_img = None
         if user_id:
-            try:
-                from shakky import app as bot_app
-                photos = await bot_app.get_profile_photos(int(user_id), limit=1)
-                if photos.photos:
-                    pfp_bytes = await bot_app.download_media(photos.photos[0][0], in_memory=True)
-                    req_pfp = Image.open(io.BytesIO(pfp_bytes.getvalue())).convert("RGBA")
-            except Exception as e:
-                LOGGER.warning(f"Could not fetch requester PFP: {e}")
+            req_img = await _get_tg_pfp(bot_app, int(user_id), f"pfp_user_{user_id}.jpg")
 
-        # Fallback requester: blue gradient circle
-        if req_pfp is None:
-            req_pfp = Image.new("RGBA", (pfp_size, pfp_size), (70, 130, 200, 255))
-
-        # Bot PFP (from Telegram)
-        bot_pfp = None
+        bot_img = None
         try:
-            from shakky import app as bot_app
             me = await bot_app.get_me()
-            photos = await bot_app.get_profile_photos(me.id, limit=1)
-            if photos.photos:
-                pfp_bytes = await bot_app.download_media(photos.photos[0][0], in_memory=True)
-                bot_pfp = Image.open(io.BytesIO(pfp_bytes.getvalue())).convert("RGBA")
-        except Exception as e:
-            LOGGER.warning(f"Could not fetch bot PFP: {e}")
+            bot_img = await _get_tg_pfp(bot_app, me.id, f"pfp_bot_{me.id}.jpg")
+        except Exception:
+            pass
 
-        # Fallback bot PFP: gold gradient circle
-        if bot_pfp is None:
-            bot_pfp = Image.new("RGBA", (pfp_size, pfp_size), (200, 160, 50, 255))
+        # Fallback solid-colour circles if PFP unavailable
+        if req_img is None:
+            req_img = Image.new("RGBA", (pfp_size, pfp_size), (70, 130, 200, 255))
+        if bot_img is None:
+            bot_img = Image.new("RGBA", (pfp_size, pfp_size), (200, 160, 50, 255))
 
-        # ── 4. Circular Crop the PFPs ────────────────────────────────────────────
-        req_circ = _make_circle(req_pfp, pfp_size)
-        bot_circ = _make_circle(bot_pfp, pfp_size)
+        # ── 4. Circular Crop ─────────────────────────────────────────────────────
+        req_circ = _make_circle(req_img,  pfp_size)
+        bot_circ = _make_circle(bot_img,  pfp_size)
 
-        # ── 5. Positions: Both centered, side by side in the middle ─────────────
-        gap = int(pfp_size * 0.25)  # gap between the two circles
+        # ── 5. Layout: two circles centred horizontally ──────────────────────────
+        gap     = int(pfp_size * 0.30)
         total_w = pfp_size * 2 + gap
-        start_x = (width - total_w) // 2
-        pfp_y = int(height * 0.28)  # vertical center position
+        ox      = (W - total_w) // 2
+        pfp_y   = int(H * 0.26)
 
-        req_cx = start_x + pfp_size // 2
-        req_cy = pfp_y + pfp_size // 2
-        bot_cx = start_x + pfp_size + gap + pfp_size // 2
-        bot_cy = req_cy
+        req_cx  = ox + pfp_size // 2
+        req_cy  = pfp_y + pfp_size // 2
+        bot_cx  = ox + pfp_size + gap + pfp_size // 2
+        bot_cy  = req_cy
 
-        # ── 6. Draw Shadows behind each circle ───────────────────────────────────
-        _draw_circle_shadow(stencil, req_cx, req_cy, pfp_size // 2, blur=18, color=(0, 0, 0, 200))
-        _draw_circle_shadow(stencil, bot_cx, bot_cy, pfp_size // 2, blur=18, color=(0, 0, 0, 200))
+        # ── 6. Drop shadows ──────────────────────────────────────────────────────
+        _draw_shadow_ring(stencil, req_cx, req_cy, pfp_size // 2)
+        _draw_shadow_ring(stencil, bot_cx, bot_cy, pfp_size // 2)
 
-        # ── 7. Draw Glowing Border Ring ──────────────────────────────────────────
-        border_thickness = max(4, pfp_size // 16)
-        for circ_x, circ_y in [(req_cx, req_cy), (bot_cx, bot_cy)]:
-            ring = Image.new("RGBA", stencil.size, (0, 0, 0, 0))
-            ring_d = ImageDraw.Draw(ring)
-            bx0 = circ_x - pfp_size // 2 - border_thickness
-            by0 = circ_y - pfp_size // 2 - border_thickness
-            bx1 = circ_x + pfp_size // 2 + border_thickness
-            by1 = circ_y + pfp_size // 2 + border_thickness
-            # Outer gold glow ring
-            ring_d.ellipse((bx0, by0, bx1, by1), fill=(220, 180, 80, 180))
-            # Inner slightly smaller white ring
-            inner = border_thickness // 2
-            ring_d.ellipse(
-                (bx0 + inner, by0 + inner, bx1 - inner, by1 - inner),
-                fill=(255, 245, 200, 220)
-            )
-            ring_blur = ring.filter(ImageFilter.GaussianBlur(3))
-            stencil = Image.alpha_composite(stencil, ring_blur)
+        # ── 7. Glow border rings ─────────────────────────────────────────────────
+        thick = max(5, pfp_size // 14)
+        _draw_glow_ring(stencil, req_cx, req_cy, pfp_size // 2, thick)
+        _draw_glow_ring(stencil, bot_cx, bot_cy, pfp_size // 2, thick)
 
-        # ── 8. Paste the Circular PFPs ───────────────────────────────────────────
-        stencil.paste(req_circ, (start_x, pfp_y), req_circ)
-        stencil.paste(bot_circ, (start_x + pfp_size + gap, pfp_y), bot_circ)
+        # ── 8. Paste PFPs ────────────────────────────────────────────────────────
+        stencil.paste(req_circ, (ox,                       pfp_y), req_circ)
+        stencil.paste(bot_circ, (ox + pfp_size + gap,      pfp_y), bot_circ)
 
-        # ── 9. Text Overlay ──────────────────────────────────────────────────────
-        stencil_rgb = stencil.convert("RGB")
-        draw = ImageDraw.Draw(stencil_rgb)
+        # ── 9. SVG-style icons (flat PNGs) as badge overlays ─────────────────────
+        icon_sz = max(24, pfp_size // 5)
+
+        music_icon = await _load_icon(ICON_MUSIC, icon_sz, "icon_music.png", tint=(230, 190, 70, 255))
+        clock_icon = await _load_icon(ICON_CLOCK, icon_sz, "icon_clock.png", tint=(200, 220, 255, 255))
+
+        # Place music icon badge on bot circle (bottom-right corner of circle)
+        if music_icon:
+            mi_x = ox + pfp_size + gap + pfp_size - icon_sz + 4
+            mi_y = pfp_y + pfp_size - icon_sz + 4
+            stencil.paste(music_icon, (mi_x, mi_y), music_icon)
+
+        # ── 10. Convert to RGB for text ────────────────────────────────────────
+        out = stencil.convert("RGB")
+        draw = ImageDraw.Draw(out)
 
         try:
-            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-            if not os.path.exists(font_path):
-                font_path = "arial.ttf"
-            title_font  = ImageFont.truetype(font_path, int(height * 0.052))
-            info_font   = ImageFont.truetype(font_path, int(height * 0.036))
-            label_font  = ImageFont.truetype(font_path, int(height * 0.028))
+            fp = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            if not os.path.exists(fp):
+                fp = "arial.ttf"
+            f_title = ImageFont.truetype(fp, int(H * 0.054))
+            f_info  = ImageFont.truetype(fp, int(H * 0.038))
+            f_label = ImageFont.truetype(fp, int(H * 0.030))
         except Exception:
-            title_font = info_font = label_font = ImageFont.load_default()
+            f_title = f_info = f_label = ImageFont.load_default()
 
-        text_color     = (255, 240, 200)   # warm cream  – readable on dark smoke
-        shadow_color   = (0, 0, 0)
+        CREAM  = (255, 240, 200)
+        GOLD   = (220, 180, 65)
+        MUTED  = (190, 175, 145)
 
-        def draw_text_shadowed(pos, text, font, color=text_color):
-            draw.text((pos[0] + 2, pos[1] + 2), text, font=font, fill=shadow_color)
-            draw.text(pos, text, font=font, fill=color)
+        # Labels under circles
+        req_label = f"@{by[:12]}"
+        rb = draw.textbbox((0, 0), req_label, font=f_label)
+        _text_shadow(draw, (ox + (pfp_size - (rb[2]-rb[0])) // 2, pfp_y + pfp_size + 6), req_label, f_label, CREAM)
 
-        # "VS" divider label between the two circles
-        vs_x = start_x + pfp_size + gap // 2
-        vs_y = pfp_y + pfp_size // 2 - int(height * 0.025)
-        draw_text_shadowed((vs_x - 10, vs_y), "⚡", info_font, color=(255, 210, 50))
+        bot_label = "Shakky Music"
+        bb = draw.textbbox((0, 0), bot_label, font=f_label)
+        _text_shadow(draw, (ox + pfp_size + gap + (pfp_size - (bb[2]-bb[0])) // 2, pfp_y + pfp_size + 6), bot_label, f_label, GOLD)
 
-        # Requester label under left circle
-        req_label = f"@{by[:10]}"
-        bbox = draw.textbbox((0, 0), req_label, font=label_font)
-        lw = bbox[2] - bbox[0]
-        draw_text_shadowed((start_x + (pfp_size - lw) // 2, pfp_y + pfp_size + 4), req_label, label_font)
+        # "VS" marker between
+        vs_x = ox + pfp_size + gap // 2 - 6
+        vs_y = pfp_y + pfp_size // 2 - int(H * 0.028)
+        _text_shadow(draw, (vs_x, vs_y), "VS", f_info, GOLD)
 
-        # Bot label under right circle
-        bot_label = "Shakky 🎵"
-        bbox2 = draw.textbbox((0, 0), bot_label, font=label_font)
-        bw = bbox2[2] - bbox2[0]
-        draw_text_shadowed(
-            (start_x + pfp_size + gap + (pfp_size - bw) // 2, pfp_y + pfp_size + 4),
-            bot_label, label_font, color=(220, 180, 80)
-        )
+        # Song Title — centred
+        clean = (title[:24] + "...") if len(title) > 24 else title
+        cb = draw.textbbox((0, 0), clean.upper(), font=f_title)
+        title_y = pfp_y + pfp_size + int(H * 0.10)
+        _text_shadow(draw, ((W - (cb[2]-cb[0])) // 2, title_y), clean.upper(), f_title, CREAM)
 
-        # Song title — centered, below PFPs
-        clean_title = (title[:22] + "…") if len(title) > 22 else title
-        title_y = pfp_y + pfp_size + int(height * 0.09)
-        t_bbox = draw.textbbox((0, 0), clean_title.upper(), font=title_font)
-        t_w = t_bbox[2] - t_bbox[0]
-        draw_text_shadowed(((width - t_w) // 2, title_y), clean_title.upper(), title_font)
+        # Duration line with clock icon inline
+        if clock_icon:
+            # Place clock icon inline
+            clock_pil = clock_icon.resize((int(H * 0.038), int(H * 0.038)), Image.LANCZOS)
+        dur_text = f"  {duration}    {by[:14]}"
+        db2 = draw.textbbox((0, 0), dur_text, font=f_info)
+        info_y = title_y + int(H * 0.075)
+        info_x = (W - (db2[2]-db2[0])) // 2
+        _text_shadow(draw, (info_x, info_y), dur_text, f_info, MUTED)
+        if clock_icon:
+            out.paste(clock_pil, (info_x - clock_pil.size[0] - 4, info_y), clock_pil)
 
-        # Duration + requestor line
-        info_text = f"🕐 {duration}  •  🎤 {by[:12]}"
-        i_bbox = draw.textbbox((0, 0), info_text, font=info_font)
-        i_w = i_bbox[2] - i_bbox[0]
-        info_y = title_y + int(height * 0.07)
-        draw_text_shadowed(((width - i_w) // 2, info_y), info_text, info_font, color=(200, 185, 150))
-
-        # ── 10. Save ─────────────────────────────────────────────────────────────
-        stencil_rgb.save(output_path, "JPEG", quality=88)
+        # ── 11. Save ──────────────────────────────────────────────────────────────
+        out.save(output_path, "JPEG", quality=90)
         return output_path
 
     except Exception as e:

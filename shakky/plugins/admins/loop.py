@@ -1,4 +1,4 @@
-from pyrogram import filters
+﻿from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from shakky import app
