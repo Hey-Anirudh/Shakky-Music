@@ -46,25 +46,40 @@ async def get_thumb(videoid, title, duration, by, chat_id):
 
         # 3. Composite
         if yt_thumb_path and os.path.exists(yt_thumb_path):
-            yt_img = Image.open(yt_thumb_path).convert("RGB")
+            yt_img = Image.open(yt_thumb_path).convert("RGBA")
             
-            # The central Luffy poster portrait in 735x420 collage is approx:
-            # x: 295, y: 155, w: 145, h: 105
-            # We scale relative to actual image size just in case:
-            target_w = int(width * 0.197)
-            target_h = int(height * 0.25)
+            # Scale slightly larger as requested
+            target_w = int(width * 0.22)
+            target_h = int(height * 0.28)
             yt_img = yt_img.resize((target_w, target_h), Image.LANCZOS)
             
-            pos_x = int(width * 0.40)
-            pos_y = int(height * 0.36)
+            # Curve edges
+            rad = 12
+            mask = Image.new("L", yt_img.size, 0)
+            draw_m = ImageDraw.Draw(mask)
+            draw_m.rounded_rectangle([(0,0), yt_img.size], radius=rad, fill=255)
+            yt_img.putalpha(mask)
             
-            # Add a slight dark border to blend it in
-            border = Image.new("RGB", (target_w + 4, target_h + 4), (40, 25, 15))
-            border.paste(yt_img, (2, 2))
+            pos_x = int(width * 0.388)
+            pos_y = int(height * 0.35)
             
-            stencil.paste(border, (pos_x - 2, pos_y - 2))
+            # Generate drop shadow
+            shadow = Image.new("RGBA", (target_w + 30, target_h + 30), (0,0,0,0))
+            shadow_draw = ImageDraw.Draw(shadow)
+            shadow_draw.rounded_rectangle([(10, 10), (target_w + 20, target_h + 20)], radius=rad, fill=(0, 0, 0, 180))
+            from PIL import ImageFilter
+            shadow = shadow.filter(ImageFilter.GaussianBlur(8))
+            
+            # Smoke Alpha Blend
+            smoke_overlay = Image.new("RGBA", stencil.size, (20, 10, 5, 85))  # Brownish vintage smoke
+            stencil = Image.alpha_composite(stencil.convert("RGBA"), smoke_overlay)
+            
+            # Paste shadow then image
+            stencil.paste(shadow, (pos_x - 15, pos_y - 15), shadow)
+            stencil.paste(yt_img, (pos_x, pos_y), yt_img)
 
         # 4. Text Overlays
+        stencil = stencil.convert("RGB")
         draw = ImageDraw.Draw(stencil)
         
         try:
@@ -72,23 +87,23 @@ async def get_thumb(videoid, title, duration, by, chat_id):
             if not os.path.exists(font_path):
                 font_path = "arial.ttf"
             
-            title_font = ImageFont.truetype(font_path, int(height * 0.045))
-            info_font = ImageFont.truetype(font_path, int(height * 0.035))
+            title_font = ImageFont.truetype(font_path, int(height * 0.050))
+            info_font = ImageFont.truetype(font_path, int(height * 0.038))
         except:
             title_font = ImageFont.load_default()
             info_font = ImageFont.load_default()
 
         # Clean title for layout
-        clean_title = (title[:22] + '...') if len(title) > 22 else title
-        text_color = (48, 28, 13) # Very dark brown, perfectly matching wanted ink
+        clean_title = (title[:20] + '...') if len(title) > 20 else title
+        text_color = (25, 12, 5) # Darker wanted ink
         
         # Dead or Alive section placement
-        title_y = int(height * 0.64)
-        draw.text((int(width * 0.405), title_y), clean_title.upper(), font=title_font, fill=text_color)
+        title_y = int(height * 0.65)
+        draw.text((int(width * 0.400), title_y), clean_title.upper(), font=title_font, fill=text_color)
         
         # Bounty / Info placement
-        info_y = int(height * 0.70)
-        draw.text((int(width * 0.41), info_y), f"DUR: {duration}  |  BY: {by[:10]}", font=info_font, fill=text_color)
+        info_y = int(height * 0.71)
+        draw.text((int(width * 0.405), info_y), f"DUR: {duration} | VIP: {by[:8]}", font=info_font, fill=text_color)
 
         # 5. Save
         stencil.save(output_path, "JPEG", quality=85)

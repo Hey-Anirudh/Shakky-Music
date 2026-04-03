@@ -111,17 +111,24 @@ async def stream(
             await notify_webapp(chat_id, current_song=current, queue=db[chat_id][1:], action="play")
             
             button = stream_markup(_, chat_id)
+            msg_text = (
+                f"✦ **NOW PLAYING**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"✧ **Track:** `{title[:28]}`\n"
+                f"✧ **Duration:** `{duration_min}`\n"
+                f"✧ **By:** {user_name}"
+            )
             if str(thumb_path).startswith("http"):
                 run = await app.send_message(
                     original_chat_id,
-                    text=f"➲ **Now Streaming**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**Requested By:** {user_name}",
+                    text=msg_text,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             else:
                 run = await app.send_photo(
                     original_chat_id,
                     photo=thumb_path,
-                    caption=f"➲ **Now Streaming**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**Requested By:** {user_name}",
+                    caption=msg_text,
                     reply_markup=InlineKeyboardMarkup(button),
                 )
             db[chat_id][0]["mystic"] = run

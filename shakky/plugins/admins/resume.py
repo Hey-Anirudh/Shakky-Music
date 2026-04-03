@@ -33,8 +33,6 @@ async def resume_com(cli, message: Message, _, chat_id):
     await notify_webapp(chat_id, is_playing=True, action="resume")
 
     await message.reply_text(
-        f"✦ **STREAM RESUMED**\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"✧ **Action By:** {message.from_user.mention}",
+        f"▶ **Resumed** by {message.from_user.mention}",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="✖ Close", callback_data="close")]])
     )

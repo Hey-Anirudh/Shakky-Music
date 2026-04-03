@@ -117,27 +117,28 @@ async def del_back_playlist(client, CallbackQuery, _):
     if command == "Pause":
         if chat_id not in db or not db[chat_id]:
             return await CallbackQuery.answer("➲ Nothing is playing.", show_alert=True)
-        await CallbackQuery.answer("Paused.")
+        await CallbackQuery.answer("Paused ⏸")
         await ani.pause_stream(chat_id)
         db[chat_id][0]["paused"] = True
         await notify_webapp(chat_id, is_playing=False, action="pause")
-        await CallbackQuery.message.reply_text(f"II **Paused** by {mention}")
+        await CallbackQuery.message.reply_text(f"⏸ **Paused** by {mention}")
 
     elif command == "Resume":
         if chat_id not in db or not db[chat_id]:
             return await CallbackQuery.answer("➲ Nothing is paused.", show_alert=True)
-        await CallbackQuery.answer("Resumed.")
+        await CallbackQuery.answer("Resumed ▶")
         await ani.resume_stream(chat_id)
         db[chat_id][0]["paused"] = False
         await notify_webapp(chat_id, is_playing=True, action="resume")
-        await CallbackQuery.message.reply_text(f"▷ **Resumed** by {mention}")
+        await CallbackQuery.message.reply_text(f"▶ **Resumed** by {mention}")
 
     elif command == "Stop" or command == "End":
-        await CallbackQuery.answer("Stopped.")
+        await CallbackQuery.answer("Stopped ⏹")
         db[chat_id] = []
         await remove_active_chat(chat_id)
         await ani.stop_stream(chat_id)
-        await CallbackQuery.message.reply_text(f"▢ **Stopped** by {mention}")
+        await notify_webapp(chat_id, is_playing=False, action="stop")
+        await CallbackQuery.message.reply_text(f"⏹ **Stopped** by {mention}")
         try:
             await CallbackQuery.message.delete()
         except:
@@ -147,7 +148,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         check = db.get(chat_id)
         if not check or len(check) < 2:
             return await CallbackQuery.answer("➲ Not enough songs to shuffle.", show_alert=True)
-        await CallbackQuery.answer("Shuffled.")
+        await CallbackQuery.answer("Shuffled 🔀")
         current = check.pop(0)
         random.shuffle(check)
         check.insert(0, current)
@@ -157,19 +158,33 @@ async def del_back_playlist(client, CallbackQuery, _):
     elif command == "Skip" or command == "Replay":
         if chat_id not in db or not db[chat_id]:
             return await CallbackQuery.answer("➲ Queue is empty.", show_alert=True)
-        await CallbackQuery.answer("Skipped.")
+        await CallbackQuery.answer("Skipped ⏭")
         await skip_and_play(chat_id)
         
         if not db.get(chat_id):
-            await CallbackQuery.edit_message_text(f"‣ **Skipped** by {mention}. Queue is now empty.")
+            await CallbackQuery.edit_message_text(f"⏭ **Skipped** by {mention}\n\n✧ Queue is now empty.")
         else:
             current = db[chat_id][0]
-            webapp_url = f"https://t.me/{app.me.username if app.me else config.BOT_USERNAME.replace('@', '')}/join?startapp={abs(chat_id)}"
-            buttons = [[InlineKeyboardButton(text="🎧 Join Room", url=webapp_url)]]
-            await CallbackQuery.edit_message_text(
-                f"‣ **Skipped** by {mention}\n\n🎵 **Now Playing**\n**{current['title']}**",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
+            from shakky.utils.inline.play import stream_markup as sm
+            buttons = sm(_, chat_id)
+            try:
+                await CallbackQuery.edit_message_text(
+                    f"✦ **NOW PLAYING**\n"
+                    f"━━━━━━━━━━━━━━━━━━\n"
+                    f"✧ **Track:** `{current['title']}`\n"
+                    f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
+                    f"✧ **Skipped By:** {mention}",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+            except Exception:
+                await CallbackQuery.message.reply_text(
+                    f"⏭ **Skipped** by {mention}\n🎵 Now playing: **{current['title']}**"
+                )
+
+    elif command == "Loop":
+        await CallbackQuery.answer("Loop set ↺")
+        await set_loop(chat_id, 10)
+        await CallbackQuery.message.reply_text(f"↺ **Loop On (10x)** by {mention}")
 
     elif command.isdigit():  # Seek (1=10s back, 2=10s fwd)
         if chat_id not in db or not db[chat_id]:

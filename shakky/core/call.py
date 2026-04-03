@@ -475,59 +475,85 @@ class Call(PyTgCalls):
                 db[chat_id][0]["speed_path"] = None
                 db[chat_id][0]["speed"] = 1.0
             video = True if str(streamtype) == "video" else False
-            if "live_" in queued:
-                n, link = await YouTube.video(videoid, True)
-                if n == 0:
-                    return await app.send_message(original_chat_id, text="Error fetching live stream.")
-                if video:
-                    stream = AudioVideoPiped(link, audio_parameters=HighQualityAudio(), video_parameters=HighQualityVideo())
-                else:
-                    stream = AudioPiped(link, audio_parameters=HighQualityAudio())
-                try:
-                    db[chat_id][0]["start_time"] = time.time()
-                    await client.change_stream(chat_id, stream)
-                    try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
-                    except: pass
-                except: pass
-            elif "vid_" in queued:
+
+            # --- JIT Download for vid_ references ---
+            if "vid_" in queued:
                 if not os.path.exists(queued) and videoid:
                     try:
-                        from shakky.platforms import YouTube
-                        # JIT Download the track
-                        file_path, direct = await YouTube.download(
+                        from shakky.platforms import YouTube as YT
+                        file_path, direct = await YT.download(
                             videoid, None, videoid=True, video=video
                         )
-                        queued = file_path
-                        db[chat_id][0]["file"] = file_path
+                        if file_path and os.path.exists(file_path):
+                            queued = file_path
+                            db[chat_id][0]["file"] = file_path
+                            # Update duration from downloaded file
+                            try:
+                                dur = await asyncio.get_event_loop().run_in_executor(
+                                    None, check_duration, file_path
+                                )
+                                dur = int(dur)
+                                db[chat_id][0]["seconds"] = dur
+                                db[chat_id][0]["dur"] = seconds_to_min(dur)
+                            except:
+                                pass
+                        else:
+                            LOGGER.error(f"JIT download returned no file for {videoid}")
+                            queued = None
                     except Exception as e:
                         LOGGER.error(f"Failed JIT Download in change_stream: {e}")
                         queued = None
-                if video:
-                    stream = AudioVideoPiped(queued, HighQualityAudio(), HighQualityVideo())
                 else:
-                    stream = AudioPiped(queued, HighQualityAudio())
-                    
+                    # vid_ prefix but file exists or no videoid
+                    queued = queued if os.path.exists(queued) else None
+
+            elif "live_" in queued:
+                n, link = await YouTube.video(videoid, True)
+                if n == 0:
+                    return await app.send_message(original_chat_id, text="Error fetching live stream.")
+                queued = link
+
+            # --- Build stream object ---
+            if not queued:
+                LOGGER.error(f"No valid file to stream for chat {chat_id}")
+                await _clear_(chat_id)
                 try:
-                    db[chat_id][0]["start_time"] = time.time()
-                    await client.change_stream(chat_id, stream)
-                    try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
-                    except: pass
-                except: pass
+                    return await client.leave_group_call(chat_id)
+                except:
+                    return
+
+            if video:
+                stream = AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
             else:
-                # Standard file path
-                if video:
-                    stream = AudioVideoPiped(queued, HighQualityAudio(), HighQualityVideo())
-                else:
-                    stream = AudioPiped(queued, HighQualityAudio())
-                try:
-                    db[chat_id][0]["start_time"] = time.time()
-                    await client.change_stream(chat_id, stream)
-                    try:
-                        await notify_webapp(chat_id, current_song=db.get(chat_id)[0], queue=db.get(chat_id)[1:6], action="play")
-                    except: pass
-                except: pass
+                stream = AudioPiped(queued, HighQualityAudio())
+
+            # --- Change the VC stream ---
+            try:
+                import time
+                db[chat_id][0]["start_time"] = time.time()
+                await client.change_stream(chat_id, stream)
+            except Exception as e:
+                LOGGER.error(f"change_stream failed: {e}")
+                return
+
+            # --- Notify WebApp (sync skip to web player) ---
+            try:
+                await notify_webapp(
+                    chat_id,
+                    current_song=db[chat_id][0],
+                    queue=db[chat_id][1:6],
+                    action="skip",
+                    is_playing=True,
+                )
+            except Exception as e:
+                LOGGER.warning(f"WebApp notify failed after change_stream: {e}")
+
+            # --- Generate thumbnail for the new track ---
+            try:
+                thumb_path = await get_thumb(videoid, title, db[chat_id][0].get("dur", "0:00"), user, chat_id)
+                db[chat_id][0]["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
+            except:
+                pass
 
     async def ping(self):
         pings = []

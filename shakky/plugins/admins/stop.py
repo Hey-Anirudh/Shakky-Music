@@ -29,8 +29,6 @@ async def stop_music(cli, message: Message, _, chat_id):
     ai_mode[chat_id] = False
     
     await message.reply_text(
-        f"✦ **STREAM STOPPED**\n"
-        f"━━━━━━━━━━━━━━━━━━\n"
-        f"✧ **Action By:** {message.from_user.mention}",
+        f"⏹ **Stopped** by {message.from_user.mention}",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="✖ Close", callback_data="close")]])
     )
