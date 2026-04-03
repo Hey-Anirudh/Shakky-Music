@@ -491,10 +491,18 @@ class Call(PyTgCalls):
                     except: pass
                 except: pass
             elif "vid_" in queued:
-                # In robust mode, we'd Redownload here, but for now we skip if file missing
                 if not os.path.exists(queued) and videoid:
-                    # Trigger redownload or skip
-                    pass
+                    try:
+                        from shakky.platforms import YouTube
+                        # JIT Download the track
+                        file_path, direct = await YouTube.download(
+                            videoid, None, videoid=True, video=video
+                        )
+                        queued = file_path
+                        db[chat_id][0]["file"] = file_path
+                    except Exception as e:
+                        LOGGER.error(f"Failed JIT Download in change_stream: {e}")
+                        queued = None
                 if video:
                     stream = AudioVideoPiped(queued, HighQualityAudio(), HighQualityVideo())
                 else:

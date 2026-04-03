@@ -176,25 +176,12 @@ async def skip_and_play(chat_id):
         await ani.stop_stream(chat_id)
         return
 
-    # Clean up old file
-    old_song = db[chat_id].pop(0)
-    if old_song.get("file") and os.path.exists(old_song["file"]):
-        try: os.remove(old_song["file"])
-        except: pass
-
-    if not db[chat_id]:
-        await remove_active_chat(chat_id)
+    # Call change_stream - it automatically pops the current song, 
+    # handles loop logic, and starts the next stream in queue.
+    try:
+        from shakky.utils.database import group_assistant
+        assistant = await group_assistant(ani, chat_id)
+        await ani.change_stream(assistant, chat_id)
+    except Exception as e:
+        logger.error(f"Error in skip_and_play: {e}")
         await ani.stop_stream(chat_id)
-        await notify_webapp(chat_id, is_playing=False, action="stop")
-    else:
-        # Play next
-        current = db[chat_id][0]
-        file_path = current["file"]
-        # If it's a vid_ ID, download it now (Just-In-Time)
-        if "vid_" in file_path:
-            # Download logic here...
-            pass
-        
-        await ani.change_stream(ani, chat_id) # Using the PyTgCalls instance
-        current["start_time"] = time.time()
-        await notify_webapp(chat_id, current_song=current, queue=db[chat_id][1:], action="play")
