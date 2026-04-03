@@ -598,15 +598,40 @@ class YouTubeAPI:
                     "thumbnail_url": thumbnail
                 }
         except Exception as e:
-            logger.error(f"YouTube search failed: {e}")
-        
-        # Fallback metadata
-        return {
-            "title": query,
-            "duration": "0:00",
-            "vidid": None,
-            "thumbnail_url": config.STREAM_IMG_URL
-        }
+            logger.error(f"YouTube search primary failed ({e}), using yt-dlp fallback...")
+            try:
+                import yt_dlp
+                loop = asyncio.get_event_loop()
+                def _ytdlp_search():
+                    opts = {'quiet': True, 'extract_flat': True}
+                    with yt_dlp.YoutubeDL(opts) as ydl:
+                        data = ydl.extract_info(f"ytsearch1:{query}", download=False)
+                        if 'entries' in data and len(data['entries']) > 0:
+                            return data['entries'][0]
+                    return None
+                
+                info = await loop.run_in_executor(None, _ytdlp_search)
+                if info:
+                    def _fmt_dur(sec):
+                        try:
+                            m, s = divmod(int(sec), 60)
+                            return f"{m}:{s:02d}"
+                        except: return "0:00"
+                    return {
+                        "title": info.get("title", query),
+                        "duration": _fmt_dur(info.get("duration", 0)),
+                        "vidid": info.get("id"),
+                        "thumbnail_url": info.get("thumbnails", [{"url": config.STREAM_IMG_URL}])[0]["url"] if info.get("thumbnails") else config.STREAM_IMG_URL
+                    }
+            except Exception as fe:
+                logger.error(f"yt-dlp fallback search failed: {fe}")
+                
+            return {
+                "title": query,
+                "duration": "0:00",
+                "vidid": None,
+                "thumbnail_url": config.STREAM_IMG_URL
+            }
 
     async def get_song_by_keyword(self, keyword: str) -> Optional[str]:
 
