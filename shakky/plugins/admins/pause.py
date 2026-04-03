@@ -25,5 +25,5 @@ async def pause_admin(cli, message: Message, _, chat_id):
 
     await message.reply_text(
         f"⏸ **Paused** by {message.from_user.mention}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="✖ Close", callback_data="close")]])
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(text="✕", callback_data="close")]])
     )

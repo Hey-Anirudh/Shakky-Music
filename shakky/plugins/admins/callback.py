@@ -153,7 +153,7 @@ async def del_back_playlist(client, CallbackQuery, _):
         random.shuffle(check)
         check.insert(0, current)
         await notify_webapp(chat_id, current_song=current, queue=check[1:], action="shuffle")
-        await CallbackQuery.message.reply_text(f"🔀 **Shuffled** by {mention}")
+        await CallbackQuery.message.reply_text(f"➲ **Queue Shuffled** by {mention}")
 
     elif command == "Skip" or command == "Replay":
         if chat_id not in db or not db[chat_id]:
@@ -166,20 +166,52 @@ async def del_back_playlist(client, CallbackQuery, _):
         else:
             current = db[chat_id][0]
             from shakky.utils.inline.play import stream_markup as sm
+            from shakky.utils.thumbnails import get_thumb
+            from pyrogram.types import InputMediaPhoto
             buttons = sm(_, chat_id)
+            
+            # Generate premium thumb
             try:
-                await CallbackQuery.edit_message_text(
-                    f"▷ **Now Playing**\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"✧ **Track:** `{current['title']}`\n"
-                    f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                    f"✧ **Skipped By:** {mention}",
+                thumb = await get_thumb(
+                    current.get("vidid", "unknown"),
+                    current["title"],
+                    current.get("dur", "0:00"),
+                    current.get("by", "User"),
+                    chat_id,
+                    user_id=current.get("user_id")
+                )
+            except:
+                thumb = current.get("thumb") or "https://files.catbox.moe/5ni0on.jpg"
+
+            caption = (
+                f"▷ **Now Playing**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"✧ **Track:** `{current['title'][:30]}`\n"
+                f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
+                f"✧ **Skipped By:** {mention}"
+            )
+
+            try:
+                # Try to edit the media in the current message
+                await CallbackQuery.edit_message_media(
+                    media=InputMediaPhoto(media=thumb, caption=caption),
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
             except Exception:
-                await CallbackQuery.message.reply_text(
-                    f"⏭ **Skipped** by {mention}\n🎵 Now playing: **{current['title']}**"
-                )
+                try:
+                    # If edit fails, follow back by sending a new photo and deleting the old one
+                    await CallbackQuery.message.delete()
+                    await CallbackQuery.message.reply_photo(
+                        photo=thumb,
+                        caption=caption,
+                        reply_markup=InlineKeyboardMarkup(buttons)
+                    )
+                except:
+                    # Total fallback to text if everything fails
+                    try:
+                        await CallbackQuery.edit_message_text(caption, reply_markup=InlineKeyboardMarkup(buttons))
+                    except:
+                        pass
 
     elif command == "Loop":
         await CallbackQuery.answer("Loop set ↺")

@@ -32,8 +32,20 @@ async def skip(cli, message: Message, _, chat_id):
         current = db[chat_id][0]
         buttons = stream_markup(_, chat_id)
         
-        # Try sending thumbnail with buttons
-        thumb = current.get("thumb") or config.STREAM_IMG_URL
+        # Generate custom thumbnail with PFPs
+        from shakky.utils.thumbnails import get_thumb
+        try:
+            thumb = await get_thumb(
+                current.get("vidid", "unknown"),
+                current["title"],
+                current.get("dur", "0:00"),
+                current.get("by", "User"),
+                chat_id,
+                user_id=current.get("user_id")
+            )
+        except:
+            thumb = current.get("thumb") or config.STREAM_IMG_URL
+            
         try:
             await app.send_photo(
                 chat_id,
@@ -41,32 +53,18 @@ async def skip(cli, message: Message, _, chat_id):
                 caption=(
                     f"▷ **Now Playing**\n"
                     f"━━━━━━━━━━━━━━━━━━\n"
-                    f"✧ **Track:** `{current['title']}`\n"
+                    f"✧ **Track:** `{current['title'][:30]}`\n"
                     f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
                     f"✧ **Skipped By:** {message.from_user.mention}"
                 ),
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
         except Exception:
-            try:
-                await app.send_photo(
-                    chat_id,
-                    photo=config.STREAM_IMG_URL,
-                    caption=(
-                        f"▷ **Now Playing**\n"
-                        f"━━━━━━━━━━━━━━━━━━\n"
-                        f"✧ **Track:** `{current['title']}`\n"
-                        f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                        f"✧ **Skipped By:** {message.from_user.mention}"
-                    ),
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
-            except Exception:
-                await message.reply_text(
-                    f"▷ **Now Playing**\n"
-                    f"━━━━━━━━━━━━━━━━━━\n"
-                    f"✧ **Track:** `{current['title']}`\n"
-                    f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
-                    f"✧ **Skipped By:** {message.from_user.mention}",
-                    reply_markup=InlineKeyboardMarkup(buttons)
-                )
+            await message.reply_text(
+                f"▷ **Now Playing**\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"✧ **Track:** `{current['title'][:30]}`\n"
+                f"✧ **Duration:** `{current.get('dur', '0:00')}`\n"
+                f"✧ **Skipped By:** {message.from_user.mention}",
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )

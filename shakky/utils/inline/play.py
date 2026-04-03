@@ -1,4 +1,4 @@
-import math
+﻿import math
 import time
 from typing import Union
 from pyrogram.types import InlineKeyboardButton

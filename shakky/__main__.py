@@ -28,6 +28,14 @@ async def init():
     WebApp-Only Bot Initialization.
     No Voice Chat engine — audio plays in the browser Mini App.
     """
+    # Immediate Cleanup on Start
+    try:
+        from shakky.utils.cleanup import run_cleanup_now
+        await run_cleanup_now()
+        LOGGER("shakky").info("Boot-time cleanup of downloads folder successful.")
+    except Exception as e:
+        LOGGER("shakky").warning(f"Boot-time cleanup failed: {e}")
+
     # Load Sudoers & Banned Users
     await sudo()
     try:
