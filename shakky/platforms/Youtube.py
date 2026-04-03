@@ -442,8 +442,8 @@ class YouTubeAPI:
             
             while time.time() - start_time < timeout:
                 async for msg in self._youmusic_app.get_chat_history(GROUP_USERNAME, limit=3):
-                    # Check if it's a direct reply
-                    is_reply = msg.reply_to_message and msg.reply_to_message.id == sent_msg.id
+                    # Check if it's a direct reply using the safe native ID
+                    is_reply = (msg.reply_to_message_id == sent_msg.id)
                     
                     # Or check if it's a bot message with audio that contains our title keywords
                     is_audio = msg.audio or (msg.document and msg.document.mime_type and msg.document.mime_type.startswith('audio/'))
@@ -452,32 +452,14 @@ class YouTubeAPI:
                         from_bot = (msg.from_user and msg.from_user.is_bot) or msg.via_bot
                         
                         if is_reply or from_bot:
-                            # Verify content match (cleaning special chars)
-                            title_meta = (msg.audio.title or "") if msg.audio else ""
-                            perf_meta = (msg.audio.performer or "") if msg.audio else ""
-                            filename = (msg.audio.file_name if msg.audio else (msg.document.file_name if msg.document else "")) or ""
-                            caption = (msg.caption or "").lower()
-                            
-                            full_content = f"{title_meta} {perf_meta} {filename} {caption}".lower()
-                            
-                            # Clean query words (remove special chars)
-                            query_words = [re.sub(r'[^\w]', '', w).lower() for w in query.split() if len(w) > 2]
-                            query_words = [w for w in query_words if w]
-                            match_count = sum(1 for w in query_words if w in full_content)
-                            
-                            if is_reply:
-                                logger.info(f"Caught DIRECT audio reply for: {query}")
-                                audio_msg = msg
-                                break
-                            
-                            if match_count >= min(2, len(query_words)):
-                                logger.info(f"Caught matching bot audio! ({match_count} matches)")
-                                audio_msg = msg
-                                break
+                            audio_msg = msg
+                            logger.info(f"Caught DIRECT audio reply for: {query}")
+                            break
+                
                 if audio_msg:
                     break
-                await asyncio.sleep(0.5) # Faster polling
-                
+                    
+                await asyncio.sleep(1.5) # Prevent FloodWait locks
             if not audio_msg:
                 logger.error(f"Timeout waiting for @YouMusicRobot reply for: {query}")
                 return None
