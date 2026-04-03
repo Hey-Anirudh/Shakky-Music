@@ -66,11 +66,10 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
         )
-        # Initialize base class as Ass1
-        super().__init__(self.userbot1, cache_duration=100)
-        
-        # We also keep 'self.one' for backward compatibility and explicit access
-        self.one = self 
+        self.one = PyTgCalls(
+            self.userbot1,
+            cache_duration=100,
+        )
         
         self.userbot2 = Client(
             name="Ass2",
