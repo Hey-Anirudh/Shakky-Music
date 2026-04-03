@@ -74,9 +74,11 @@ async def _download_to_disk(url: str, path: str) -> bool:
 
 async def _get_tg_pfp(tg_client, user_id: int, cache_name: str) -> Image.Image | None:
     """
-    Download a Telegram profile photo using Pyrogram 2 async iteration.
+    Download a Telegram profile/chat photo using Pyrogram 2 async iteration.
     Returns PIL Image or None.
     """
+    if not tg_client: return None
+    
     cache_path = os.path.join(THUMB_CACHE, cache_name)
     if os.path.exists(cache_path):
         try:
@@ -86,21 +88,24 @@ async def _get_tg_pfp(tg_client, user_id: int, cache_name: str) -> Image.Image |
 
     try:
         photo = None
-        async for p in tg_client.get_profile_photos(user_id, limit=1):
+        # Pyrogram 2 uses get_chat_photos for both users and groups
+        async for p in tg_client.get_chat_photos(user_id, limit=1):
             photo = p
             break
 
         if photo is None:
             return None
 
-        # Download to a temp path (most reliable across Pyrogram versions)
+        # Download to a temp path
         tmp = cache_path + ".tmp"
         dl = await tg_client.download_media(photo, file_name=tmp)
         if dl and os.path.exists(tmp):
+            if os.path.exists(cache_path): os.remove(cache_path)
             os.rename(tmp, cache_path)
             return Image.open(cache_path).convert("RGBA")
     except Exception as e:
-        LOGGER.warning(f"Could not fetch PFP for {user_id}: {e}")
+        # LOGGER.warning(f"Could not fetch PFP for {user_id}: {e}")
+        pass
 
     return None
 
@@ -173,27 +178,33 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
         from shakky import app as bot_app
         from shakky.core.userbot import userbot as assistant_manager
 
-        # Selection of a valid Pyrogram client (Assistant is usually best for PFP access)
-        client = None
-        if hasattr(assistant_manager.one, "get_profile_photos"):
-            client = assistant_manager.one
-        elif hasattr(bot_app, "get_profile_photos"):
-            client = bot_app
+        # Clients for fetching (Assistant is better for user PFPs, Bot for itself)
+        ass_client = assistant_manager.one if hasattr(assistant_manager.one, "get_chat_photos") else None
+        bot_client = bot_app if hasattr(bot_app, "get_chat_photos") else None
         
         pfp_size = int(min(W, H) * 0.22)
 
+        # 👤 Fetch Requester PFP (User)
         req_img = None
-        if user_id and client:
-            req_img = await _get_tg_pfp(client, int(user_id), f"pfp_user_{user_id}.jpg")
+        if user_id:
+            # Try assistant first, then bot
+            if ass_client: req_img = await _get_tg_pfp(ass_client, int(user_id), f"pfp_user_{user_id}.jpg")
+            if not req_img and bot_client: req_img = await _get_tg_pfp(bot_client, int(user_id), f"pfp_user_{user_id}.jpg")
 
+        # 🤖 Fetch Bot PFP
         bot_img = None
-        if client:
+        # Bot can practically always get its own info via bot_client
+        if bot_client:
             try:
-                me = await client.get_me() if client == assistant_manager.one else await bot_app.get_me()
+                me = await bot_client.get_me()
                 pfp_id = me.id
-                bot_img = await _get_tg_pfp(client, pfp_id, f"pfp_bot_{pfp_id}.jpg")
-            except Exception:
-                pass
+                bot_img = await _get_tg_pfp(bot_client, pfp_id, f"pfp_bot_{pfp_id}.jpg")
+            except: pass
+        if not bot_img and ass_client:
+            try:
+                me = await bot_client.get_me() if bot_client else await ass_client.get_me()
+                bot_img = await _get_tg_pfp(ass_client, me.id, f"pfp_bot_{me.id}.jpg")
+            except: pass
 
         # Fallback solid-colour circles if PFP unavailable
         if req_img is None:
