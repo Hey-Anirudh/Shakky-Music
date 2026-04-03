@@ -451,11 +451,27 @@ class YouTubeAPI:
                     if is_audio:
                         from_bot = (msg.from_user and msg.from_user.is_bot) or msg.via_bot
                         
-                        if is_reply or from_bot:
+                        if is_reply:
                             audio_msg = msg
                             logger.info(f"Caught DIRECT audio reply for: {query}")
                             break
-                
+                        elif from_bot:
+                            # Verify content match
+                            import re
+                            title_meta = (msg.audio.title or "") if msg.audio else ""
+                            perf_meta = (msg.audio.performer or "") if msg.audio else ""
+                            filename = (msg.audio.file_name if msg.audio else (msg.document.file_name if msg.document else "")) or ""
+                            
+                            full_content = f"{title_meta} {perf_meta} {filename}".lower()
+                            query_words = [re.sub(r'[^\w]', '', w).lower() for w in query.split() if len(w) > 2]
+                            query_words = [w for w in query_words if w]
+                            
+                            if query_words:
+                                match_count = sum(1 for w in query_words if w in full_content)
+                                if match_count >= min(2, len(query_words)):
+                                    logger.info(f"Caught matching bot audio via fuzzy text! ({match_count} matches)")
+                                    audio_msg = msg
+                                    break
                 if audio_msg:
                     break
                     
