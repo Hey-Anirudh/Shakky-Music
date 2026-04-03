@@ -520,9 +520,22 @@ class YouTubeAPI:
             if search_result.get("result"):
                 result = search_result["result"][0]
                 thumbnail = result['thumbnails'][0]['url'] if result.get('thumbnails') else config.STREAM_IMG_URL
+                
+                # Robust duration extraction
+                duration = "0:00"
+                if result.get("duration"):
+                    duration = result["duration"]
+                elif result.get("durationString"):
+                    duration = result["durationString"]
+                elif result.get("duration_string"):
+                    duration = result["duration_string"]
+                elif result.get("duration_seconds"):
+                     from shakky.utils.formatters import seconds_to_min
+                     duration = seconds_to_min(result["duration_seconds"])
+
                 return {
                     "title": result.get("title", query),
-                    "duration": result.get("duration", "Unknown"),
+                    "duration": duration,
                     "vidid": result.get("id"),
                     "thumbnail_url": thumbnail
                 }
@@ -532,7 +545,7 @@ class YouTubeAPI:
         # Fallback metadata
         return {
             "title": query,
-            "duration": "Unknown",
+            "duration": "0:00",
             "vidid": None,
             "thumbnail_url": config.STREAM_IMG_URL
         }

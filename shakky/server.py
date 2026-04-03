@@ -50,6 +50,9 @@ DOWNLOADS_DIR = get_dir("downloads")
 app.mount("/media", StaticFiles(directory=DOWNLOADS_DIR), name="media")
 app.mount("/speed", StaticFiles(directory=PLAYBACK_DIR), name="speed")
 
+THUMBS_DIR = get_dir("downloads/thumbs")
+app.mount("/thumbs", StaticFiles(directory=THUMBS_DIR), name="thumbs")
+
 # ============================================================
 # MODELS
 # ============================================================

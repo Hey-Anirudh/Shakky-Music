@@ -99,14 +99,31 @@ async def stream(
             # Start sync session
             current = db[chat_id][0]
             current["start_time"] = time.time()
+            
+            # Generate custom thumbnail
+            try:
+                thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id)
+                current["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
+            except Exception as e:
+                logger.error(f"Thumbnail generation error: {e}")
+                thumb_path = config.STREAM_IMG_URL
+                
             await notify_webapp(chat_id, current_song=current, queue=db[chat_id][1:], action="play")
             
             button = stream_markup(_, chat_id)
-            run = await app.send_message(
-                original_chat_id,
-                text=f"➲ **Now Streaming**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**Requested By:** {user_name}",
-                reply_markup=InlineKeyboardMarkup(button),
-            )
+            if str(thumb_path).startswith("http"):
+                run = await app.send_message(
+                    original_chat_id,
+                    text=f"➲ **Now Streaming**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**Requested By:** {user_name}",
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
+            else:
+                run = await app.send_photo(
+                    original_chat_id,
+                    photo=thumb_path,
+                    caption=f"➲ **Now Streaming**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**Requested By:** {user_name}",
+                    reply_markup=InlineKeyboardMarkup(button),
+                )
             db[chat_id][0]["mystic"] = run
             db[chat_id][0]["markup"] = "stream"
             
