@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Union
 
 from pyrogram import Client
+from pyrogram.enums import ChatType
+from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls, StreamType
 from pytgcalls.exceptions import (
@@ -343,33 +345,33 @@ class Call(PyTgCalls):
                 if video
                 else AudioPiped(link, audio_parameters=HighQualityAudio())
             )
-        # Force cache update so Pyrogram detects the active GroupCall
+        # --- JIT Assistant Metadata Sync ---
         userbot = None
-        if assistant == self.one:
-            userbot = self.userbot1
-        elif assistant == self.two:
-            userbot = self.userbot2
-        elif assistant == self.three:
-            userbot = self.userbot3
-        elif assistant == self.four:
-            userbot = self.userbot4
-        elif assistant == self.five:
-            userbot = self.userbot5
+        if assistant == self.one: userbot = self.userbot1
+        elif assistant == self.two: userbot = self.userbot2
+        elif assistant == self.three: userbot = self.userbot3
+        elif assistant == self.four: userbot = self.userbot4
+        elif assistant == self.five: userbot = self.userbot5
 
-        try:
-            from pyrogram.raw.functions.channels import GetFullChannel
-            from pyrogram.raw.functions.messages import GetFullChat
-            
-            if userbot:
-                peer = await userbot.resolve_peer(chat_id)
-                if hasattr(peer, "channel_id"):
+        async def refresh_vc_state():
+            if not userbot: return
+            try:
+                # get_chat is more robust than resolve_peer for populating local cache
+                chat = await userbot.get_chat(chat_id)
+                # If it's a channel, we need the FullChannel info for VC detection
+                if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]:
+                    from pyrogram.raw.functions.channels import GetFullChannel
+                    peer = await userbot.resolve_peer(chat_id)
                     await userbot.invoke(GetFullChannel(channel=peer))
-                elif hasattr(peer, "chat_id"):
-                    await userbot.invoke(GetFullChat(chat_id=peer.chat_id))
-        except Exception as e:
-            LOGGER.warning(f"[join_call] Failed to ping VC state for {chat_id}: {e}")
+                else:
+                    from pyrogram.raw.functions.messages import GetFullChat
+                    await userbot.invoke(GetFullChat(chat_id=chat_id))
+            except Exception as e:
+                LOGGER.warning(f"[join_call] VC state sync failed for {chat_id}: {e}")
 
-        # Try joining with up to 3 attempts
+        await refresh_vc_state()
+
+        # --- Joining Logic with Robust Retries ---
         joined = False
         last_err = None
         for attempt in range(3):
@@ -382,11 +384,15 @@ class Call(PyTgCalls):
                 break
             except NoActiveGroupCall as e:
                 last_err = e
-                LOGGER.warning(f"[join_call] Attempt {attempt+1} default join: NoActiveGroupCall, trying pulse_stream...")
+                # Maybe the assistant was just added or the VC just started
+                LOGGER.warning(f"[join_call] Attempt {attempt+1}: NoActiveGroupCall. Refreshing...")
+                await refresh_vc_state()
+                await asyncio.sleep(2)
                 try:
+                    # Retry with pulse_stream which is sometimes more aggressive
                     await assistant.join_group_call(
                         chat_id, stream, stream_type=StreamType().pulse_stream
-                     )
+                    )
                     joined = True
                     break
                 except AlreadyJoinedError:
@@ -394,12 +400,24 @@ class Call(PyTgCalls):
                     break
                 except Exception as e2:
                     last_err = e2
-                    LOGGER.warning(f"[join_call] pulse_stream also failed on attempt {attempt+1}: {e2}")
-            except TelegramServerError:
-                raise AssistantErr("➲ **Telegram Server Error. Please retry later.**")
+                    LOGGER.warning(f"[join_call] pulse_stream failed after refresh on attempt {attempt+1}: {e2}")
+            except (PeerIdInvalid, ChatWriteForbidden):
+                # Assistant might NOT be in the group!
+                LOGGER.info(f"Assistant {assistant} not in chat {chat_id}. Attempting to join...")
+                try:
+                    invitelink = (await app.get_chat(chat_id)).invite_link
+                    if invitelink:
+                        await userbot.join_chat(invitelink)
+                        await refresh_vc_state()
+                    else:
+                        LOGGER.error("No invite link found to join assistant.")
+                except Exception as join_err:
+                    LOGGER.error(f"Assistant join failed: {join_err}")
+                last_err = PeerIdInvalid
             except Exception as e:
                 last_err = e
-                LOGGER.error(f"[join_call] Unexpected error on attempt {attempt+1}: {e}")
+                LOGGER.error(f"[join_call] Attempt {attempt+1} unexpected: {e}")
+            
             if not joined and attempt < 2:
                 await asyncio.sleep(2)
 
