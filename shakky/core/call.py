@@ -423,7 +423,7 @@ class Call(PyTgCalls):
 
         if not joined:
             LOGGER.error(f"[join_call] All 3 attempts failed completely. Last error: {last_err}")
-            raise AssistantErr("➲ **Failed to join the Voice Chat. Ensure it's active and I am Admin.**")
+            raise AssistantErr("➲ **Failed to join the Voice Chat. Ensure it's active or use /reboot ᴛᴏ ʀᴇғʀᴇsʜ.**")
 
 
         await add_active_chat(chat_id)
@@ -500,7 +500,7 @@ class Call(PyTgCalls):
                     try:
                         from shakky.platforms import YouTube as YT
                         file_path, direct = await YT.download(
-                            videoid, None, videoid=True, video=video
+                            videoid, video=video, raw_query=title
                         )
                         if file_path and os.path.exists(file_path):
                             queued = file_path

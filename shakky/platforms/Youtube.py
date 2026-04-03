@@ -984,7 +984,7 @@ class YouTubeAPI:
                     chat_id=CHANNEL_USERNAME,
                     query=video_id,
                     limit=50,
-                    filter="audio"
+                    filter=MessagesFilter.AUDIO
                 ):
                     if message and (message.audio or message.document):
                         found_messages.append(message)
@@ -1292,13 +1292,16 @@ class YouTubeAPI:
                     return file_path
             
             # STEP 2B - Request via @YouMusicRobot
+            # Try to get title for better external search if keyword is missing or looks like an ID
+            if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
+                logger.debug(f"Resolving title for external search: {query}")
+                info = await self._get_song_info(link, fallback_title=raw_query)
+                if info and info.get('title'):
+                    query = info['title']
+                    logger.info(f"Using resolved title for Step 2B search: {query}")
+
             logger.info(f"Step 2B: Fetching via @YouMusicRobot for: {query}")
-            # Try to get title for better upload caption
-            title = raw_query
-            if not title:
-                info = await self._get_song_info(link)
-                title = info.get('title', query)
-                
+            title = raw_query or query # Use query as title fallback for captions
             file_path = await self._fetch_via_youmusicbot(query, title=title)
             if file_path:
                 logger.info(f"Acquired from Step 2B: {file_path}")
