@@ -491,16 +491,19 @@ class YouTubeAPI:
             final_title = title or query
             # Sanitize for keyword
             sanitized_kw = "".join(e for e in final_title if e.isalnum() or e == " ").strip().replace(" ", "_").lower()
-            caption = f"{final_title} | #{sanitized_kw}"
+            caption = f"{final_title} | #{sanitized_kw}\n\nID: {vidid}"
             
             # Use assistant account to upload if possible
             if self._app:
                 try:
                     chat_id = self._channel_id if self._channel_id else CHANNEL_USERNAME
+                    # Add file_name and title for better UX
                     await self._app.send_audio(
                         chat_id=chat_id,
                         audio=file_path,
-                        caption=caption
+                        caption=caption,
+                        title=final_title,
+                        performer="Smash Music"
                     )
                     logger.info(f"Uploaded new song to cache channel: {final_title}")
                 except Exception as ex:
@@ -513,30 +516,78 @@ class YouTubeAPI:
             return None
 
     async def search(self, query: str):
-        """Search YouTube for a query and return metadata (STEP 1)"""
+        """Search YouTube for a query and return metadata with high precision (STEP 1)"""
         try:
-            results = VideosSearch(query, limit=1)
+            # 1. Enhance query for music if not already present
+            search_query = query
+            if not any(k in query.lower() for k in ["music", "official", "lyrics", "audio", "video"]):
+                search_query = f"{query} music"
+
+            # 2. Fetch multiple candidates
+            results = VideosSearch(search_query, limit=5)
             search_result = await results.next()
+            
             if search_result.get("result"):
-                result = search_result["result"][0]
-                thumbnail = result['thumbnails'][0]['url'] if result.get('thumbnails') else config.STREAM_IMG_URL
+                candidates = search_result["result"]
                 
-                # Robust duration extraction
+                # 3. Filter and Score Candidates
+                best_candidate = None
+                max_score = -1
+                
+                # Keywords that boost score
+                boost_words = ["official", "lyrics", "audio", "original", "vevo", "music video"]
+                penalty_words = ["karaoke", "instrumental", "cover", "remix", "tiktok", "shorts"]
+
+                for can in candidates:
+                    title = can.get("title", "").lower()
+                    duration_str = can.get("duration", "0:00")
+                    
+                    # Convert duration to seconds for filtering
+                    try:
+                        parts = list(map(int, duration_str.split(':')))
+                        dur_sec = 0
+                        for i, p in enumerate(reversed(parts)):
+                            dur_sec += p * (60 ** i)
+                    except: dur_sec = 0
+                    
+                    # Skip extremely short clips (likely not full songs) if dur_sec < 60 and dur_sec > 0:
+                    if 0 < dur_sec < 45: continue
+                    
+                    # Score based on keyword presence
+                    score = 0
+                    for word in boost_words:
+                        if word in title: score += 10
+                    for word in penalty_words:
+                        if word in title: score -= 15
+                    
+                    # Exact word matching boost
+                    query_words = set(re.sub(r'[^\w\s]', '', query.lower()).split())
+                    title_words = set(re.sub(r'[^\w\s]', '', title).split())
+                    shared_words = query_words.intersection(title_words)
+                    score += len(shared_words) * 5
+
+                    if score > max_score:
+                        max_score = score
+                        best_candidate = can
+                
+                # Fallback to first if all rejected
+                if not best_candidate:
+                    best_candidate = candidates[0]
+
+                thumbnail = best_candidate['thumbnails'][0]['url'] if best_candidate.get('thumbnails') else config.STREAM_IMG_URL
+                
                 duration = "0:00"
-                if result.get("duration"):
-                    duration = result["duration"]
-                elif result.get("durationString"):
-                    duration = result["durationString"]
-                elif result.get("duration_string"):
-                    duration = result["duration_string"]
-                elif result.get("duration_seconds"):
-                     from shakky.utils.formatters import seconds_to_min
-                     duration = seconds_to_min(result["duration_seconds"])
+                if best_candidate.get("duration"):
+                    duration = best_candidate["duration"]
+                elif best_candidate.get("durationString"):
+                    duration = best_candidate["durationString"]
+                
+                logger.info(f"High-precision search found: {best_candidate.get('title')} (Score: {max_score})")
 
                 return {
-                    "title": result.get("title", query),
+                    "title": best_candidate.get("title", query),
                     "duration": duration,
-                    "vidid": result.get("id"),
+                    "vidid": best_candidate.get("id"),
                     "thumbnail_url": thumbnail
                 }
         except Exception as e:
@@ -1219,16 +1270,25 @@ class YouTubeAPI:
                 if local_file:
                     logger.info(f"Using local file: {local_file}")
                     return local_file
+                
+                # PRE-STEP 2A: Search by ID (Highest Precision)
+                logger.info(f"Checking DB channel for ID: {video_id}")
+                id_msg = await self._search_in_channel(video_id)
+                if id_msg:
+                    file_path = await self._download_audio_file(self._app, id_msg, video_id)
+                    if file_path:
+                        logger.info(f"Acquired via ID match: {file_path}")
+                        return file_path
             
-            # STEP 2A - Search @smashmusicdb (CHANNEL_USERNAME)
+            # STEP 2A - Search @smashmusicdb (CHANNEL_USERNAME) by Title
             logger.info(f"Step 2A: Searching @smashmusicdb for: {query}")
             msg = await self._search_smash_db(query)
             if msg:
-                # Use msg ID as part of filename for stability
-                vidid_db = f"db_{msg.id}"
+                # Use msg ID or video_id for naming
+                vidid_db = video_id if video_id else f"db_{msg.id}"
                 file_path = await self._download_audio_file(self._app, msg, vidid_db)
                 if file_path:
-                    logger.info(f"Acquired from Step 2A: {file_path}")
+                    logger.info(f"Acquired from Step 2A by title: {file_path}")
                     return file_path
             
             # STEP 2B - Request via @YouMusicRobot
