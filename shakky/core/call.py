@@ -5,8 +5,8 @@ from datetime import datetime, timedelta
 from typing import Union
 
 from pyrogram import Client
-from pyrogram.enums import ChatType
-from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden
+from pyrogram.enums import ChatType, ChatMemberStatus
+from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
 from pyrogram.types import InlineKeyboardMarkup
 from pytgcalls import PyTgCalls, StreamType
 from pytgcalls.exceptions import (
@@ -375,6 +375,58 @@ class Call(PyTgCalls):
             except Exception as e:
                 LOGGER.warning(f"[join_call] VC state sync failed for {chat_id}: {e}")
 
+        # --- Assistant Membership & Ban Handling ---
+        try:
+            if not userbot.me:
+                try:
+                    await userbot.get_me()
+                except Exception as me_err:
+                    LOGGER.error(f"[join_call] Failed to get_me for assistant: {me_err}")
+
+            assistant_id = userbot.me.id
+            assistant_mention = userbot.me.mention
+            
+            try:
+                member = await app.get_chat_member(chat_id, assistant_id)
+                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
+                    LOGGER.info(f"Assistant {assistant_id} is banned in {chat_id}. Attempting to unban...")
+                    try:
+                        await app.unban_chat_member(chat_id, assistant_id)
+                        LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
+                    except Exception as e:
+                        LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
+                        raise AssistantErr(f"➲ **Assistant is banned in this chat.**\n\n**Please unban {assistant_mention} manually and try again.**")
+            except UserNotParticipant:
+                LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
+                try:
+                    await app.add_chat_members(chat_id, assistant_id)
+                    LOGGER.info(f"Added Assistant {assistant_id} to {chat_id}")
+                except Exception as e:
+                    LOGGER.warning(f"Failed to add Assistant via bot: {e}. Trying via invite link...")
+                    try:
+                        chat = await app.get_chat(chat_id)
+                        invitelink = chat.invite_link
+                        if not invitelink:
+                            try:
+                                invitelink = await app.export_chat_invite_link(chat_id)
+                            except:
+                                pass
+                        
+                        if invitelink:
+                            await userbot.join_chat(invitelink)
+                            LOGGER.info(f"Assistant {assistant_id} joined via invite link.")
+                        else:
+                            raise AssistantErr(f"➲ **Assistant is not in this chat and I cannot add it.**\n\n**Please add {assistant_mention} manually and try again.**")
+                    except Exception as join_err:
+                         LOGGER.error(f"Join via invite link failed: {join_err}")
+                         raise AssistantErr(f"➲ **Assistant is not in this chat.**\n\n**Please add {assistant_mention} manually and try again.**")
+            except Exception as e:
+                LOGGER.error(f"Membership check for Assistant failed: {e}")
+        except AssistantErr:
+            raise
+        except Exception as e:
+            LOGGER.error(f"Error while ensuring assistant is in group: {e}")
+
         await refresh_vc_state()
 
         # --- Joining Logic with Robust Retries ---
@@ -390,12 +442,10 @@ class Call(PyTgCalls):
                 break
             except NoActiveGroupCall as e:
                 last_err = e
-                # Maybe the assistant was just added or the VC just started
                 LOGGER.warning(f"[join_call] Attempt {attempt+1}: NoActiveGroupCall. Refreshing...")
                 await refresh_vc_state()
                 await asyncio.sleep(2)
                 try:
-                    # Retry with pulse_stream which is sometimes more aggressive
                     await assistant.join_group_call(
                         chat_id, stream, stream_type=StreamType().pulse_stream
                     )
@@ -407,19 +457,6 @@ class Call(PyTgCalls):
                 except Exception as e2:
                     last_err = e2
                     LOGGER.warning(f"[join_call] pulse_stream failed after refresh on attempt {attempt+1}: {e2}")
-            except (PeerIdInvalid, ChatWriteForbidden):
-                # Assistant might NOT be in the group!
-                LOGGER.info(f"Assistant {assistant} not in chat {chat_id}. Attempting to join...")
-                try:
-                    invitelink = (await app.get_chat(chat_id)).invite_link
-                    if invitelink:
-                        await userbot.join_chat(invitelink)
-                        await refresh_vc_state()
-                    else:
-                        LOGGER.error("No invite link found to join assistant.")
-                except Exception as join_err:
-                    LOGGER.error(f"Assistant join failed: {join_err}")
-                last_err = PeerIdInvalid
             except Exception as e:
                 last_err = e
                 LOGGER.error(f"[join_call] Attempt {attempt+1} unexpected: {e}")

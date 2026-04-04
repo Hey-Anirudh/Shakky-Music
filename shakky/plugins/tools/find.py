@@ -20,7 +20,12 @@ async def find_song(_, message: Message):
         return await message.reply_text("➲ **Please provide a song name to find.**\n\n**Example:** `find tum hi ho`")
 
     query = message.text.split(None, 1)[1].strip()
-    mystic = await message.reply_text(f"➲ **Searching for** `{query}` **in the database...**")
+    user_mention = message.from_user.mention
+    mystic = await message.reply_text(f"➲ **Searching.**")
+    
+    # Start animation task
+    from shakky.plugins.play.play import _animate_loader
+    asyncio.create_task(_animate_loader(mystic))
 
     # Access the assistant (app for API calls)
     assistant = YouTube._youmusic_app
@@ -116,8 +121,13 @@ async def send_file_by_bot(original_message, message_id, channel_id, query, myst
         if "." in title: title = title.rsplit(".", 1)[0]
         title = title.replace("_", " ").title()
 
-        bot_username = getattr(config, "BOT_USERNAME", "@Smash_MusicBot").replace("@", "")
-        caption = f"➲ **{title}**\n\n✨ **Downloaded By :** @{bot_username}\n🌷"
+        bot_username = getattr(config, "BOT_USERNAME", "Shakky_RoBot").replace("@", "")
+        caption = (
+            f"🎧 **Track Found!**\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✧ **Name:** `{title[:35]}`\n"
+            f"✧ **By:** @{bot_username}"
+        )
 
         # COPY = Direct transfer with caption change (Telegram side)
         await file_msg.copy(
@@ -141,8 +151,13 @@ async def send_file_to_user(original_message, file_message, query, mystic):
         if "." in title: title = title.rsplit(".", 1)[0]
         title = title.replace("_", " ").title()
 
-        bot_username = getattr(config, "BOT_USERNAME", "@Smash_MusicBot").replace("@", "")
-        caption = f"➲ **{title}**\n\n✨ **Downloaded By :** @{bot_username}\n🌷"
+        bot_username = getattr(config, "BOT_USERNAME", "Shakky_RoBot").replace("@", "")
+        caption = (
+            f"🎧 **Track Found!**\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
+            f"✧ **Name:** `{title[:35]}`\n"
+            f"✧ **By:** @{bot_username}"
+        )
 
         await file_message.copy(
             chat_id=original_message.chat.id,
