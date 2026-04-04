@@ -1,5 +1,6 @@
 import asyncio
 import os
+import time
 from datetime import datetime, timedelta
 from typing import Union
 
@@ -590,7 +591,6 @@ class Call(PyTgCalls):
 
             # --- Change the VC stream ---
             try:
-                import time
                 db[chat_id][0]["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
             except Exception as e:
