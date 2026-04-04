@@ -444,7 +444,7 @@ class Call(PyTgCalls):
             except: pass
         
 
-    async def change_stream(self, client, chat_id, mention=None):
+    async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
         lock = self.get_lock(chat_id)
         async with lock:
             # 🩹 FIX: Anti-Double-Skip Logic
@@ -464,31 +464,32 @@ class Call(PyTgCalls):
                 except:
                     return
 
-            popped = None
-            loop = await get_loop(chat_id)
-            try:
-                if loop == 0:
-                    popped = check.pop(0)
-                else:
-                    loop = loop - 1
-                    await set_loop(chat_id, loop)
-                
-                if popped:
-                    await auto_clean(popped)
-                
-                if not check:
-                    await _clear_(chat_id)
+            if not skip_pop:
+                popped = None
+                loop = await get_loop(chat_id)
+                try:
+                    if loop == 0:
+                        popped = check.pop(0)
+                    else:
+                        loop = loop - 1
+                        await set_loop(chat_id, loop)
+                    
+                    if popped:
+                        await auto_clean(popped)
+                    
+                    if not check:
+                        await _clear_(chat_id)
+                        try:
+                            return await client.leave_group_call(chat_id)
+                        except:
+                            return
+                except Exception as e:
+                    LOGGER.error(f"Error in change_stream: {e}")
                     try:
+                        await _clear_(chat_id)
                         return await client.leave_group_call(chat_id)
                     except:
                         return
-            except Exception as e:
-                LOGGER.error(f"Error in change_stream: {e}")
-                try:
-                    await _clear_(chat_id)
-                    return await client.leave_group_call(chat_id)
-                except:
-                    return
 
             queued = check[0]["file"]
             language = await get_lang(chat_id)
@@ -569,13 +570,16 @@ class Call(PyTgCalls):
                 
                 # Check if we still have more songs in queue
                 if len(db[chat_id]) > 0:
-                    # Recursive call to attempt next song.
-                    # Note: No pop(0) here because change_stream will pop it internally.
-                    return await self.change_stream(client, chat_id)
-                else:
-                    await _clear_(chat_id)
-                    try: return await client.leave_group_call(chat_id)
-                    except: return
+                    # Pop the track that just failed
+                    db[chat_id].pop(0)
+                    if len(db[chat_id]) > 0:
+                        # Recursive call with skip_pop=True to attempt next song.
+                        return await self.change_stream(client, chat_id, skip_pop=True)
+                
+                # If we get here, no songs left
+                await _clear_(chat_id)
+                try: return await client.leave_group_call(chat_id)
+                except: return
 
             if video:
                 stream = AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
@@ -594,12 +598,14 @@ class Call(PyTgCalls):
                 except:
                     pass
                 if len(db[chat_id]) > 0:
-                    # Recursive call to attempt next song
-                    return await self.change_stream(client, chat_id)
-                else:
-                    await _clear_(chat_id)
-                    try: return await client.leave_group_call(chat_id)
-                    except: return
+                    # Pop failed track
+                    db[chat_id].pop(0)
+                    if len(db[chat_id]) > 0:
+                        return await self.change_stream(client, chat_id, skip_pop=True)
+                
+                await _clear_(chat_id)
+                try: return await client.leave_group_call(chat_id)
+                except: return
 
             # --- Fire-and-forget WebApp notification (non-blocking) ---
             asyncio.create_task(self._notify_webapp_safe(chat_id))
