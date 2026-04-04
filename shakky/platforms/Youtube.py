@@ -499,12 +499,19 @@ class YouTubeAPI:
             file_path = await self._download_audio_file(self._youmusic_app, audio_msg, vidid)
             
             # 4. Delete request and reply
+            # 4. Delete request and reply
             try:
                 await self._youmusic_app.delete_messages(GROUP_USERNAME, [sent_msg.id, audio_msg.id])
             except:
                 pass
-                
-            # DB Save bypassed (User requested fresh files only)
+            
+            # --- SUPER FAST CACHING ---
+            # Automatically save this to our Database Channel with the keyword for future instant search
+            try:
+                asyncio.create_task(self._upload_to_channel(file_path, title or query, vidid, keyword=query))
+                logger.info(f"✅ Scheduled background upload of '{query}' to database channel.")
+            except Exception as e:
+                logger.error(f"Failed to schedule DB upload: {e}")
                     
             return file_path
             
@@ -1238,7 +1245,7 @@ class YouTubeAPI:
         else:
             raise Exception("Downloaded file is empty or doesn't exist")
     
-    async def _upload_to_channel(self, file_path: str, title: str, video_id: str) -> Optional[Message]:
+    async def _upload_to_channel(self, file_path: str, title: str, video_id: str, **kwargs) -> Optional[Message]:
         """Upload song to channel"""
         if not self._app or not CHANNEL_USERNAME or not os.path.exists(file_path):
             return None
@@ -1250,7 +1257,12 @@ class YouTubeAPI:
             if len(clean_title) > 100:
                 clean_title = clean_title[:97] + "..."
             
+            # Use specific ID and Keyword for fast retrieval
             caption = f"{clean_title}\n\nID: {video_id}"
+            if "keyword" in locals() and keyword:
+                caption += f"\nKeyword: #{keyword.replace(' ', '_')}"
+            elif "kwargs" in locals() and kwargs.get("keyword"):
+                 caption += f"\nKeyword: #{kwargs.get('keyword').replace(' ', '_')}"
             
             logger.info(f"Uploading to channel {CHANNEL_USERNAME}: {clean_title}")
             
@@ -1339,9 +1351,21 @@ class YouTubeAPI:
     async def _do_download(self, link, query, video_id, raw_query):
         """Actual download logic, called under dedup lock + semaphore."""
         async with self._download_semaphore:
-            # DB Load bypassed (User requested fresh files only)
-            
-            # STEP 2B - Request via @YouMusicRobot
+            # ⚡ STEP 2A: SUPER FAST CACHE SEARCH
+            # Check Database Channel first so we don't have to send 'find' in group
+            logger.info(f"⚡ Searching Database Channel for: {query}")
+            try:
+                db_msg = await self._search_smash_db(query)
+                if db_msg:
+                    logger.info(f"🎯 Cache Hit! Found in Database Channel: {db_msg.id}")
+                    file_path = await self._download_audio_file(self._app, db_msg, video_id or f"db_{db_msg.id}")
+                    if file_path:
+                        logger.info(f"✅ Instant Retrieval Successful: {file_path}")
+                        return file_path
+            except Exception as e:
+                logger.warning(f"DB search failed: {e}")
+
+            # STEP 2B - Request via @YouMusicRobot if not in database
             if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
                 logger.debug(f"Resolving title for external search: {query}")
                 info = await self._get_song_info(link, fallback_title=raw_query)
