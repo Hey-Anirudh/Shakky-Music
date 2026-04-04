@@ -1228,7 +1228,11 @@
             if (!state.current) return;
             const newUrl = state.current.media_url;
             if (newUrl && newUrl !== mediaUrl) {
-                mediaUrl = newUrl; audio.src = newUrl; audio.load();
+                mediaUrl = newUrl; 
+                // Cache-buster to prevent corrupt/partial cached files from stopping playback
+                const buster = `?v=${Date.now()}`;
+                audio.src = newUrl + buster; 
+                audio.load();
                 audio.addEventListener('canplay', () => sync(state), { once: true });
             } else if (newUrl) {
                 sync(state);

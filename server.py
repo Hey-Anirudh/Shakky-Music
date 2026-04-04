@@ -59,7 +59,12 @@ def get_dir(name):
 PLAYBACK_DIR = get_dir("playback")
 DOWNLOADS_DIR = get_dir("downloads")
 
-app.mount("/media", StaticFiles(directory=DOWNLOADS_DIR), name="media")
+# Custom StaticFiles to prevent aggressive caching of media files
+class NoCacheStaticFiles(StaticFiles):
+    def is_not_modified(self, response_headers, request_headers) -> bool:
+        return False # Force re-validation for media chunks
+
+app.mount("/media", NoCacheStaticFiles(directory=DOWNLOADS_DIR), name="media")
 app.mount("/speed", StaticFiles(directory=PLAYBACK_DIR), name="speed")
 
 # ============================================================
@@ -121,16 +126,23 @@ print(f"[DB] Loaded {len(live_rooms)} room states from disk.")
 
 def normalize_id(chat_id) -> str:
     """Consistently use absolute numeric string for IDs, but keep 'c' prefix for channels to match webapp.py."""
-    s = str(chat_id).strip()
+    if not chat_id:
+        return "global"
+    s = str(chat_id).strip().lower()
+    
+    # Remove any unwanted characters like slashes if they leaked in
+    s = s.replace("/", "").replace("\\", "")
+    
     # If it's already 'c' prefixed, return as is
     if s.startswith("c"):
         return s
-    # If it's negative, convert to 'c' prefix
+    # If it's negative (Telegram convention), convert to 'c' prefix
     if s.startswith("-"):
         return "c" + s[1:]
-    # If it's a positive 100... ID (like 10024...), also 'c' prefix it
+    # If it's a positive 100... ID (WebApp start_param convention), also 'c' prefix it
     if s.startswith("100") and len(s) >= 11:
         return "c" + s
+    
     # Fallback to absolute int string
     try:
         return str(abs(int(s)))
@@ -347,10 +359,25 @@ async def get_state(raw_id: str):
     """Allows frontend to poll for current state on page load."""
     chat_key = normalize_id(raw_id)
     room = live_rooms.get(chat_key)
+    
+    # Log the lookup to debug 404s
+    print(f"[API] State request: raw={raw_id} -> key={chat_key} | found={room is not None}")
+    
     if room and room.get("state"):
         state = dict(room["state"])
         state["server_time"] = time.time() # Inject fresh server time
         return {"status": "ok", "state": state}
+    
+    # Robustness: Check if we have an un-prefixed version in live_rooms (legacy fallback)
+    alt_key = str(raw_id).strip().replace("-", "")
+    if alt_key != chat_key:
+        room = live_rooms.get(alt_key)
+        if room and room.get("state"):
+            print(f"[API] Fallback HIT: key={alt_key}")
+            state = dict(room["state"])
+            state["server_time"] = time.time()
+            return {"status": "ok", "state": state}
+
     return {"status": "empty", "state": None}
 
 class InviteData(BaseModel):
