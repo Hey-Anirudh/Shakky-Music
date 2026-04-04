@@ -48,14 +48,16 @@ async def play_commnd(client, message: Message, _):
 
     query = message.text.split(None, 1)[1] if len(message.command) > 1 else None
     
+    # Common variables needed for all play types
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name
+    chat_id = message.chat.id
+    forceplay = "force" in message.command[0]
+
     # --- Telegram Media (Reply) Detection ---
     if message.reply_to_message:
         if message.reply_to_message.audio or message.reply_to_message.voice or message.reply_to_message.video:
             mystic = await message.reply_text("➲ **Processing Telegram Media...**")
-            user_id = message.from_user.id
-            user_name = message.from_user.first_name
-            chat_id = message.chat.id
-            forceplay = "force" in message.command[0]
             
             try:
                 await stream(
@@ -68,6 +70,9 @@ async def play_commnd(client, message: Message, _):
 
     if not query:
         return await message.reply_text("➲ **Please provide a song name or link to play.**")
+
+    # Initial loading message for external sources
+    mystic = await message.reply_text("➲ **Searching... Please wait.**")
 
     # --- Spotify Link Detection ---
     from shakky import Spotify
@@ -106,13 +111,7 @@ async def play_commnd(client, message: Message, _):
         if not result:
             return await mystic.edit_text("❌ No results found on YouTube.")
             
-        # Step 2: Handoff to stream engine
-        user_id = message.from_user.id
-        user_name = message.from_user.first_name
-        chat_id = message.chat.id
-        
-        # Check if it's a forceplay command
-        forceplay = "force" in message.command[0]
+        # Step 2: Handoff to stream engine (Already handled user_id, chat_id above)
         
         await stream(
             _,

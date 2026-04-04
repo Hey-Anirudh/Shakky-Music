@@ -37,6 +37,19 @@ API_KEY = getattr(config, "API_KEY", "")
 # Telegram settings
 CHANNEL_USERNAME = getattr(config, "CHANNEL_USERNAME", "@smashmusicdb")
 GROUP_USERNAME = getattr(config, "GROUP_USERNAME", "shadowmusicbase")
+
+# Robust conversion for numeric IDs in usernames
+try:
+    if CHANNEL_USERNAME and (str(CHANNEL_USERNAME).startswith("-100") or str(CHANNEL_USERNAME).isdigit()):
+        CHANNEL_USERNAME = int(CHANNEL_USERNAME)
+except:
+    pass
+try:
+    if GROUP_USERNAME and (str(GROUP_USERNAME).startswith("-100") or str(GROUP_USERNAME).isdigit()):
+        GROUP_USERNAME = int(GROUP_USERNAME)
+except:
+    pass
+
 SESSION_STRING = getattr(config, "SESSION_STRING", os.environ.get("SESSION_STRING"))
 YOU_MUSIC_SESSION = getattr(config, "YOU_MUSIC_SESSION", os.environ.get("YOU_MUSIC_SESSION"))
 
