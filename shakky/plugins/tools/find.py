@@ -22,24 +22,29 @@ async def find_song(_, message: Message):
     query = message.text.split(None, 1)[1].strip()
     mystic = await message.reply_text(f"➲ **Searching for** `{query}` **in the database...**")
 
-    # Access the assistant account (YouMusicRobot client)
+    # Access the assistant (app for API calls)
     assistant = YouTube._youmusic_app
     if not assistant:
-        # Fallback to DB search only if assistant is not ready
-        db_message = await YouTube._get_song_by_keyword(query)
-        if db_message:
-            return await send_file_to_user(message, db_message, query, mystic)
-        return await mystic.edit_text("➲ **Assistant not ready and song not found in DB.**")
+        return await mystic.edit_text("➲ **Assistant not ready. Refreshing...**")
+
+    # 1. SEARCH LOCAL DATABASE FIRST (Super Fast)
+    try:
+        db_channel = getattr(config, "CHANNEL_USERNAME", "@smashmusicdb")
+        async for db_msg in assistant.search_messages(db_channel, query=query, limit=1):
+            if db_msg.audio or db_msg.document:
+                return await send_file_to_user(message, db_msg, query, mystic)
+    except Exception as e:
+        logger.error(f"Local DB search failed: {e}")
 
     try:
-        # 2. EXTERNAL SEARCH VIA @shadowmusicbase ONLY (As per user request)
-        await mystic.edit_text(f"➲ **Searching for** `{query}` **...**")
+        # 2. EXTERNAL SEARCH VIA @shadowmusicbase
+        await mystic.edit_text(f"➲ **Searching in External DB...**")
         
         # Send search command
         sent_msg = await assistant.send_message(GROUP_USERNAME, f"find {query}")
         
         start_time = time.time()
-        timeout = 40
+        timeout = 35 # Reduced timeout for snappy feel
         audio_msg = None
         
         # Super fast polling loop
@@ -68,7 +73,7 @@ async def find_song(_, message: Message):
             except:
                 pass
             
-            await asyncio.sleep(1.2) # Faster polling
+            await asyncio.sleep(0.7) # SUPER FAST polling
 
         if audio_msg:
             # BRIDGE FORWARDING (No download to disk)
