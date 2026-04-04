@@ -1,5 +1,6 @@
 import random
 import string
+import asyncio
 from pyrogram import filters
 from pyrogram.types import InlineKeyboardMarkup, InputMediaPhoto, Message
 import config
@@ -29,6 +30,23 @@ from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 from shakky import YouTube, app
 from shakky.utils.decorators.language import language
 from config import BANNED_USERS
+
+async def _animate_loader(mystic: Message):
+    """Animates the searching dots until message is deleted/edited."""
+    frames = [
+        "➲ **Searching.**", 
+        "➲ **Searching..**", 
+        "➲ **Searching...**",
+        "➲ **Searching..**"
+    ]
+    i = 0
+    while True:
+        try:
+            await asyncio.sleep(1.5)
+            await mystic.edit_text(frames[i % len(frames)])
+            i += 1
+        except: # Break if message deleted or edited by other code
+            break
 
 @app.on_message(
     filters.command(["play", "vplay", "cplay", "cvplay", "playforce", "vplayforce", "cplayforce", "cvplayforce"], prefixes=["/", "!", ""])
@@ -72,7 +90,8 @@ async def play_commnd(client, message: Message, _):
         return await message.reply_text("➲ **Please provide a song name or link to play.**")
 
     # Initial loading message for external sources
-    mystic = await message.reply_text("➲ **Searching... Please wait.**")
+    mystic = await message.reply_text("➲ **Searching.**")
+    asyncio.create_task(_animate_loader(mystic))
 
     # --- Spotify Link Detection ---
     from shakky import Spotify

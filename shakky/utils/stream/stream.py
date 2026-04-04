@@ -94,6 +94,10 @@ async def stream(
                     text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**By:** {user_name}",
                     reply_markup=InlineKeyboardMarkup(button),
                 )
+                try:
+                    await mystic.delete()
+                except:
+                    pass
                 asyncio.create_task(_predownload_queued(chat_id, position))
             else:
                 await put_queue(
@@ -129,7 +133,7 @@ async def stream(
                 asyncio.create_task(
                     _send_initial_now_playing(
                         chat_id, vidid, title, duration_min, user_name, user_id,
-                        original_chat_id, _
+                        original_chat_id, _, mystic
                     )
                 )
         
@@ -189,11 +193,15 @@ async def stream(
                     await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
                     position = len(db.get(chat_id)) - 1
                     await app.send_message(original_chat_id, text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
+                    try:
+                        await mystic.delete()
+                    except:
+                        pass
                 else:
                     await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
                     await ani.join_call(chat_id, original_chat_id, file_path, video=status, image=thumbnail)
                     db[chat_id][0]["start_time"] = time.time()
-                    asyncio.create_task(_send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _))
+                    asyncio.create_task(_send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _, mystic))
                 return
 
         elif streamtype == "telegram":
@@ -216,11 +224,15 @@ async def stream(
                 await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
                 position = len(db.get(chat_id)) - 1
                 await app.send_message(original_chat_id, text=f"➲ **Added Telegram File to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
+                try:
+                    await mystic.delete()
+                except:
+                    pass
             else:
                 await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
                 await ani.join_call(chat_id, original_chat_id, file_name, video=status, image=thumbnail)
                 db[chat_id][0]["start_time"] = time.time()
-                asyncio.create_task(_send_initial_now_playing(chat_id, None, title, duration_min, user_name, user_id, original_chat_id, _))
+                asyncio.create_task(_send_initial_now_playing(chat_id, None, title, duration_min, user_name, user_id, original_chat_id, _, mystic))
             return
         
         # NOTE: If adding more streamtypes, they should also stay inside this 'async with lock' block
@@ -232,9 +244,16 @@ async def _notify_safe(chat_id, **kwargs):
     except Exception as e:
         logger.warning(f"WebApp notify failed: {e}")
 
-async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _):
+async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _, mystic=None):
     """Generate thumbnail and send Now Playing for initial play (background)."""
     try:
+        # Delete the original mystic (Searching...) message first if it exists
+        if mystic:
+            try:
+                await mystic.delete()
+            except:
+                pass
+
         current = db[chat_id][0]
         
         # Generate custom thumbnail
