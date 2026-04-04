@@ -7,10 +7,12 @@ from typing import Union
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import config
-from shakky import YouTube, app
+from shakky import app
+from shakky.platforms import YouTube, Telegram
 from shakky.core.call import ani
 from shakky.misc import db
-from shakky.utils.database import add_active_chat, is_active_chat, remove_active_chat
+from shakky.utils.database import add_active_chat, is_active_chat, remove_active_chat, update_stats
+from shakky.utils.formatters import time_to_seconds
 from shakky.utils.exceptions import AssistantErr
 from shakky.utils.inline import aq_markup, close_markup, stream_markup
 from shakky.utils.thumbnails import get_thumb
@@ -109,8 +111,6 @@ async def stream(
                 
                 # --- Stats Update for Wrapped ---
                 try:
-                    from shakky.utils.database import update_stats
-                    from shakky.utils.formatters import time_to_seconds
                     dur_sc = 0
                     try: dur_sc = time_to_seconds(duration_min)
                     except: pass
@@ -155,7 +155,6 @@ async def stream(
                     # Optimization: Resolve first song NOW if idle
                     if i == 0 and not await is_active_chat(chat_id):
                          try:
-                             from shakky import YouTube
                              search_res = await YouTube.search(track_name)
                              if search_res:
                                  db[chat_id][0].update({
@@ -167,7 +166,6 @@ async def stream(
 
                 if not await is_active_chat(chat_id):
                     # Start playback if idle
-                    from shakky.core.call import ani
                     first = db[chat_id][0]
                     await ani.join_call(chat_id, original_chat_id, first["file"], video=status)
                     first["start_time"] = time.time()
@@ -199,7 +197,6 @@ async def stream(
                 return
 
         elif streamtype == "telegram":
-            from shakky import Telegram
             audio = result.audio or result.voice
             video = result.video
             status = True if video else None
