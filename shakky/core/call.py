@@ -389,13 +389,13 @@ class Call(PyTgCalls):
             try:
                 member = await app.get_chat_member(chat_id, assistant_id)
                 if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.info(f"Assistant {assistant_id} is banned in {chat_id}. Attempting to unban...")
+                    LOGGER.info(f"Assistant {assistant_id} is banned/kicked in {chat_id}. Attempting to unban...")
                     try:
                         await app.unban_chat_member(chat_id, assistant_id)
                         LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
                     except Exception as e:
                         LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
-                        raise AssistantErr(f"➲ **Assistant is banned in this chat.**\n\n**Please unban {assistant_mention} manually and try again.**")
+                        raise AssistantErr(f"➲ **Assistant is kicked/banned in this chat.**\n\n**Please UNBAN {assistant_mention} manually and try again.**")
             except UserNotParticipant:
                 LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
                 try:
@@ -421,7 +421,20 @@ class Call(PyTgCalls):
                          LOGGER.error(f"Join via invite link failed: {join_err}")
                          raise AssistantErr(f"➲ **Assistant is not in this chat.**\n\n**Please add {assistant_mention} manually and try again.**")
             except Exception as e:
+                # If we get a "KICKED" error here, it means we can't even check status. Try unbanning as last resort.
+                if "KICKED" in str(e).upper():
+                    LOGGER.warning(f"Assistant {assistant_id} check failed with KICKED. Trying emergency unban...")
+                    try:
+                        await app.unban_chat_member(chat_id, assistant_id)
+                        # After unban, try to add
+                        try:
+                            await app.add_chat_members(chat_id, assistant_id)
+                        except:
+                            pass
+                    except:
+                        pass
                 LOGGER.error(f"Membership check for Assistant failed: {e}")
+                # Don't re-raise general exceptions yet, try to proceed and see if join_group_call works
         except AssistantErr:
             raise
         except Exception as e:
