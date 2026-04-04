@@ -88,16 +88,16 @@ async def stream(
                     "video" if video else "audio",
                 )
                 position = len(db.get(chat_id)) - 1
-                button = aq_markup(_, chat_id)
+                try:
+                    await mystic.delete()
+                except:
+                    pass
+
                 await app.send_message(
                     original_chat_id,
                     text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**Duration:** {duration_min}\n**By:** {user_name}",
                     reply_markup=InlineKeyboardMarkup(button),
                 )
-                try:
-                    await mystic.delete()
-                except:
-                    pass
                 asyncio.create_task(_predownload_queued(chat_id, position))
             else:
                 await put_queue(
@@ -192,11 +192,11 @@ async def stream(
                 if await is_active_chat(chat_id):
                     await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
                     position = len(db.get(chat_id)) - 1
-                    await app.send_message(original_chat_id, text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
                     try:
                         await mystic.delete()
                     except:
                         pass
+                    await app.send_message(original_chat_id, text=f"➲ **Added to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
                 else:
                     await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
                     await ani.join_call(chat_id, original_chat_id, file_path, video=status, image=thumbnail)
@@ -223,11 +223,11 @@ async def stream(
             if await is_active_chat(chat_id):
                 await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
                 position = len(db.get(chat_id)) - 1
-                await app.send_message(original_chat_id, text=f"➲ **Added Telegram File to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
                 try:
                     await mystic.delete()
                 except:
                     pass
+                await app.send_message(original_chat_id, text=f"➲ **Added Telegram File to Queue at #{position}**\n\n**Track:** {title[:28]}\n**By:** {user_name}")
             else:
                 await put_queue(chat_id, original_chat_id, file_name, title, duration_min, user_name, None, user_id, "video" if video else "audio")
                 await ani.join_call(chat_id, original_chat_id, file_name, video=status, image=thumbnail)
