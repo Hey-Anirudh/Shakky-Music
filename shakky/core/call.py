@@ -450,11 +450,12 @@ class Call(PyTgCalls):
             # 🩹 FIX: Anti-Double-Skip Logic
             # Prevents watchdog and on_stream_end events from skipping twice in < 2s
             now = time.time()
-            if chat_id in self._last_skip:
-                if now - self._last_skip[chat_id] < 2:
-                    LOGGER.info(f"[change_stream] Ignoring duplicate skip for {chat_id}")
-                    return
-            self._last_skip[chat_id] = now
+            if not skip_pop:
+                if chat_id in self._last_skip:
+                    if now - self._last_skip[chat_id] < 1.5:
+                        LOGGER.info(f"[change_stream] Ignoring duplicate skip for {chat_id}")
+                        return
+                self._last_skip[chat_id] = now
 
             check = db.get(chat_id)
             if not check:
@@ -573,10 +574,11 @@ class Call(PyTgCalls):
                     # Pop the track that just failed
                     db[chat_id].pop(0)
                     if len(db[chat_id]) > 0:
-                        # Recursive call with skip_pop=True to attempt next song.
+                        # Recursive call with skip_pop=True
+                        # Resetting _last_skip so recursive call isn't blocked (though we added not skip_pop gate)
                         return await self.change_stream(client, chat_id, skip_pop=True)
                 
-                # If we get here, no songs left
+                # If we get here, no playable songs left
                 await _clear_(chat_id)
                 try: return await client.leave_group_call(chat_id)
                 except: return
