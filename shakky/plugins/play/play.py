@@ -42,10 +42,10 @@ async def _animate_loader(mystic: Message):
     i = 0
     while True:
         try:
-            await asyncio.sleep(1.5)
+            await asyncio.sleep(2.5) # Slower animation to prevent FloodWait
             await mystic.edit_text(frames[i % len(frames)])
             i += 1
-        except: # Break if message deleted or edited by other code
+        except Exception: # Break if message deleted or edited by other code
             break
 
 @app.on_message(
@@ -148,9 +148,16 @@ async def play_commnd(client, message: Message, _):
     except Exception as e:
         logger.error(f"Error in play_commnd: {e}")
         try:
-            await mystic.edit_text(f"❌ Error: {str(e)}")
-        except:
-            await message.reply_text(f"❌ Error: {str(e)}")
+            from pyrogram.errors import FloodWait
+            try:
+                await mystic.edit_text(f"❌ Error: {str(e)}")
+            except FloodWait as fw:
+                await asyncio.sleep(fw.value)
+                await mystic.edit_text(f"❌ Error: {str(e)}")
+            except Exception:
+                await message.reply_text(f"❌ Error: {str(e)}")
+        except Exception:
+            pass
 
 # Anonymous Admin handler
 @app.on_callback_query(filters.regex("AnonymousAdmin") & ~BANNED_USERS)
