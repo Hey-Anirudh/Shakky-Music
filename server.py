@@ -120,11 +120,22 @@ live_rooms = load_rooms()
 print(f"[DB] Loaded {len(live_rooms)} room states from disk.")
 
 def normalize_id(chat_id) -> str:
-    """Consistently use absolute numeric string for IDs."""
+    """Consistently use absolute numeric string for IDs, but keep 'c' prefix for channels to match webapp.py."""
+    s = str(chat_id).strip()
+    # If it's already 'c' prefixed, return as is
+    if s.startswith("c"):
+        return s
+    # If it's negative, convert to 'c' prefix
+    if s.startswith("-"):
+        return "c" + s[1:]
+    # If it's a positive 100... ID (like 10024...), also 'c' prefix it
+    if s.startswith("100") and len(s) >= 11:
+        return "c" + s
+    # Fallback to absolute int string
     try:
-        return str(abs(int(chat_id)))
+        return str(abs(int(s)))
     except:
-        return str(chat_id).replace("-", "")
+        return s
 
 # ============================================================
 # Socket.io Events

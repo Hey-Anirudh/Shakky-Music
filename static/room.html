@@ -1141,10 +1141,45 @@
         const audio = document.getElementById('audio-engine');
         let socket = null, lastState = null, serverOffset = 0, mediaUrl = null, durationSec = 0, liked = false;
 
-        // Gapless Autoplay Trigger
+        // Audio Engine Error & Recovery
+        audio.addEventListener('error', (e) => {
+            console.error("Audio Error:", e);
+            const error = audio.error;
+            let msg = "Playback Error";
+            if (error) {
+                switch (error.code) {
+                    case 1: msg = "Aborted"; break;
+                    case 2: msg = "Network Error"; break;
+                    case 3: msg = "Decode Error"; break;
+                    case 4: msg = "Source Not Supported"; break;
+                }
+            }
+            showToast(`⚠️ ${msg}: Retrying...`);
+            setTimeout(() => {
+                if (mediaUrl) {
+                    audio.load();
+                    if (lastState && lastState.is_playing) sync(lastState);
+                }
+            }, 2000);
+        });
+
         audio.addEventListener('ended', () => {
             if (lastState && lastState.is_playing) {
                 sendCommand('end_skip');
+            }
+        });
+        audio.addEventListener('stalled', () => {
+            console.warn("Audio Stalled");
+            if (lastState && lastState.is_playing) {
+                // If stalled for a bit, try to nudge it
+                setTimeout(() => {
+                    if (audio.readyState < 3 && lastState && lastState.is_playing) {
+                         const target = ((Date.now() / 1000) - serverOffset) - lastState.start_time;
+                         if (Math.abs(audio.currentTime - target) > 1) {
+                             audio.currentTime = target;
+                         }
+                    }
+                }, 3000);
             }
         });
 
@@ -1201,6 +1236,7 @@
         }
 
         function sync(state) {
+            if (!state.current) return;
             const now = (Date.now() / 1000) - serverOffset;
             const startAt = state.start_time || 0;
             if (!startAt && state.is_playing) return;
@@ -1209,14 +1245,20 @@
             const drift = Math.abs(audio.currentTime - target);
 
             if (state.is_playing) {
-                if (drift > 2) {
+                // If we are significantly behind or ahead, jump
+                if (drift > 3 || audio.paused) {
                     audio.currentTime = Math.max(0, target);
-                } else if (drift > 0.4) {
-                    audio.playbackRate = target > audio.currentTime ? 1.04 : 0.96;
+                    if (audio.paused) {
+                        audio.play().catch(err => {
+                            console.error("Autoplay blocked or failed:", err);
+                        });
+                    }
+                } else if (drift > 0.5) {
+                    // Small nudge via playback rate
+                    audio.playbackRate = target > audio.currentTime ? 1.05 : 0.95;
                 } else {
                     audio.playbackRate = 1.0;
                 }
-                if (audio.paused) audio.play().catch(() => { });
             } else {
                 if (!audio.paused) audio.pause();
                 if (drift > 1) audio.currentTime = Math.max(0, target);
@@ -1437,6 +1479,13 @@
         function openQueue() { document.getElementById('queue-sheet').classList.add('open'); }
         function closeQueue() { document.getElementById('queue-sheet').classList.remove('open'); }
         function toggleListeners(show) { document.getElementById('listeners-modal').classList.toggle('open', show); }
+
+        /* ── Initialization ── */
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeSession);
+        } else {
+            initializeSession();
+        }
 
         /* ── Aurora Engine (Wow Factor) ── */
         (function() {
