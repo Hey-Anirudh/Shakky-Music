@@ -70,6 +70,7 @@ class YouTubeAPI:
         self._youmusic_app = None
         self._initialized = False
         self._channel_id = None
+        self._db_channel_id = getattr(config, "DATABASE_CHANNEL_ID", None)
         
         # --- Performance: Concurrency Controls ---
         self._download_semaphore = asyncio.Semaphore(10)  # Max 10 concurrent downloads
@@ -213,8 +214,8 @@ class YouTubeAPI:
                 # Check if we want to overwrite
                 return f"⚠️ Keyword '{keyword}' already exists. Use a different keyword."
             
-            # Upload to channel
-            chat_id = self._channel_id if self._channel_id else CHANNEL_USERNAME
+            # Upload to channel (Prefer Sentinel DB)
+            chat_id = self._db_channel_id if self._db_channel_id else (self._channel_id if self._channel_id else CHANNEL_USERNAME)
             
             # Prepare caption
             caption = f"Keyword: #{keyword}\n\nAdded via /addsong command"
@@ -292,7 +293,16 @@ class YouTubeAPI:
             
         keyword = keyword.lower().strip()
         
-        # Check cache first
+        # 0. Search in Sentinel DB (ShakkyData) - PRIMARY FAST CACHE
+        if self._db_channel_id:
+            try:
+                async for message in self._app.search_messages(self._db_channel_id, query=keyword, limit=1):
+                    if message and (message.audio or message.document):
+                        logger.info(f"Sentinel DB Keyword Hit: {keyword}")
+                        return message
+            except: pass
+        
+        # 1. Existing Logic: Check local JSON cache
         if keyword in self.keyword_cache:
             cache_info = self.keyword_cache[keyword]
             try:
@@ -499,19 +509,12 @@ class YouTubeAPI:
             file_path = await self._download_audio_file(self._youmusic_app, audio_msg, vidid)
             
             # 4. Delete request and reply
-            # 4. Delete request and reply
             try:
                 await self._youmusic_app.delete_messages(GROUP_USERNAME, [sent_msg.id, audio_msg.id])
             except:
                 pass
-            
-            # --- SUPER FAST CACHING ---
-            # Automatically save this to our Database Channel with the keyword for future instant search
-            try:
-                asyncio.create_task(self._upload_to_channel(file_path, title or query, vidid, keyword=query))
-                logger.info(f"✅ Scheduled background upload of '{query}' to database channel.")
-            except Exception as e:
-                logger.error(f"Failed to schedule DB upload: {e}")
+                
+            # DB Save bypassed (User requested fresh files only)
                     
             return file_path
             
@@ -672,25 +675,34 @@ class YouTubeAPI:
         return None
     
     async def _get_channel_info(self):
-        """Get channel ID and verify access"""
-        if not CHANNEL_USERNAME or not self._app:
+        """Get channel ID and verify access for both SmashDB and Sentinel DB"""
+        if not self._app:
             return
         
-        try:
-            chat = await self._app.get_chat(CHANNEL_USERNAME)
-            self._channel_id = chat.id
-            logger.info(f"Channel info: ID={self._channel_id}, Title={chat.title}, Username={chat.username}")
-            
-            # Test access
+        # 1. SmashDB (Original)
+        if CHANNEL_USERNAME:
             try:
-                async for msg in self._app.get_chat_history(self._channel_id, limit=5):
-                    logger.debug(f"Channel test: Found message {msg.id}")
-                logger.info(f"Successfully accessed channel {CHANNEL_USERNAME}")
+                chat = await self._app.get_chat(CHANNEL_USERNAME)
+                self._channel_id = chat.id
+                logger.info(f"SmashDB info: ID={self._channel_id}, Username={chat.username}")
             except Exception as e:
-                logger.warning(f"Limited access to channel: {e}")
-        except Exception as e:
-            logger.error(f"Failed to get channel info for {CHANNEL_USERNAME}: {e}")
-            self._channel_id = None
+                logger.error(f"Failed to get channel info for SmashDB {CHANNEL_USERNAME}: {e}")
+        
+        # 2. Sentinel DB (New Primary)
+        if self._db_channel_id:
+            try:
+                chat = await self._app.get_chat(self._db_channel_id)
+                logger.info(f"Sentinel DB info: ID={chat.id}, Title={chat.title}")
+            except Exception as e:
+                logger.error(f"Failed to verify Sentinel DB (ID: {self._db_channel_id}): {e}")
+                # Try via username if provided
+                db_user = getattr(config, "DATABASE_CHANNEL", None)
+                if db_user:
+                    try:
+                        chat = await self._app.get_chat(db_user)
+                        self._db_channel_id = chat.id
+                        logger.info(f"Sentinel DB resolved via username: ID={self._db_channel_id}")
+                    except: pass
     
     def _load_cache(self, cache_file: str) -> Dict:
         """Load cache from file"""
@@ -1245,8 +1257,79 @@ class YouTubeAPI:
         else:
             raise Exception("Downloaded file is empty or doesn't exist")
     
-    async def _upload_to_channel(self, file_path: str, title: str, video_id: str, **kwargs) -> Optional[Message]:
-        """Upload song to channel"""
+    async def _search_sentinel_db(self, video_id: str) -> Optional[Message]:
+        """Search for song in the primary database channel (Sentinel DB)"""
+        if not self._app or not self._db_channel_id or not video_id:
+            return None
+        
+        try:
+            # 1. Check persistent JSON cache (optimized lookup)
+            if video_id in self.cache:
+                cache_info = self.cache[video_id]
+                try:
+                    message = await self._app.get_messages(
+                        self._db_channel_id,
+                        cache_info['message_id']
+                    )
+                    if message and (message.audio or message.document):
+                        logger.info(f"Sentinel Cache Hit: {video_id}")
+                        return message
+                except:
+                    self.cache.pop(video_id, None)
+
+            # 2. Direct deep search in channel
+            logger.info(f"Searching Sentinel DB for: {video_id}")
+            async for message in self._app.search_messages(
+                chat_id=self._db_channel_id,
+                query=video_id,
+                limit=1
+            ):
+                if message and (message.audio or message.document):
+                    # Update cache
+                    self.cache[video_id] = {
+                        'message_id': message.id,
+                        'channel_id': self._db_channel_id,
+                        'timestamp': time.time(),
+                        'title': (message.audio.title if message.audio else message.document.file_name) or video_id
+                    }
+                    self._save_cache(self.cache_file, self.cache)
+                    return message
+        except Exception as e:
+            logger.error(f"Sentinel DB Search failed: {e}")
+        return None
+
+    async def _upload_to_sentinel_db(self, file_path: str, title: str, video_id: str):
+        """Upload a newly downloaded file to current Sentinel DB channel for future fast retrieval"""
+        if not self._app or not self._db_channel_id or not os.path.exists(file_path):
+            return
+        
+        try:
+            caption = f"Title: {title}\nID: {video_id}\n\n#ShakkyData"
+            logger.info(f"Uploading to Sentinel DB: {title} ({video_id})")
+            
+            message = await self._app.send_audio(
+                chat_id=self._db_channel_id,
+                audio=file_path,
+                caption=caption,
+                title=title,
+                performer="Shakky Bot",
+                file_name=f"{video_id}.mp3"
+            )
+            
+            # Save to cache
+            self.cache[video_id] = {
+                'message_id': message.id,
+                'channel_id': self._db_channel_id,
+                'timestamp': time.time(),
+                'title': title
+            }
+            self._save_cache(self.cache_file, self.cache)
+            logger.info(f"✅ Saved to Sentinel DB: {message.id}")
+        except Exception as e:
+            logger.error(f"Failed to upload to Sentinel DB: {e}")
+
+    async def _upload_to_channel(self, file_path: str, title: str, video_id: str) -> Optional[Message]:
+        """Legacy upload to SmashDB channel (maintained for backward compatibility)"""
         if not self._app or not CHANNEL_USERNAME or not os.path.exists(file_path):
             return None
         
@@ -1257,14 +1340,9 @@ class YouTubeAPI:
             if len(clean_title) > 100:
                 clean_title = clean_title[:97] + "..."
             
-            # Use specific ID and Keyword for fast retrieval
             caption = f"{clean_title}\n\nID: {video_id}"
-            if "keyword" in locals() and keyword:
-                caption += f"\nKeyword: #{keyword.replace(' ', '_')}"
-            elif "kwargs" in locals() and kwargs.get("keyword"):
-                 caption += f"\nKeyword: #{kwargs.get('keyword').replace(' ', '_')}"
             
-            logger.info(f"Uploading to channel {CHANNEL_USERNAME}: {clean_title}")
+            logger.info(f"Uploading to SmashDB {CHANNEL_USERNAME}: {clean_title}")
             
             chat_id = self._channel_id if self._channel_id else CHANNEL_USERNAME
             
@@ -1279,20 +1357,10 @@ class YouTubeAPI:
                 title=clean_title
             )
             
-            self.cache[video_id] = {
-                'message_id': message.id,
-                'channel_id': chat_id,
-                'timestamp': time.time(),
-                'title': clean_title,
-                'file_size': os.path.getsize(file_path) if os.path.exists(file_path) else 0
-            }
-            self._save_cache(self.cache_file, self.cache)
-            
-            logger.info(f"Uploaded to channel (message_id: {message.id})")
             return message
             
         except Exception as e:
-            logger.error(f"Error uploading to channel: {e}")
+            logger.error(f"Error uploading to SmashDB: {e}")
             return None
     
     async def download_song(self, link: str, raw_query: str = None) -> Optional[str]:
@@ -1351,21 +1419,26 @@ class YouTubeAPI:
     async def _do_download(self, link, query, video_id, raw_query):
         """Actual download logic, called under dedup lock + semaphore."""
         async with self._download_semaphore:
-            # ⚡ STEP 2A: SUPER FAST CACHE SEARCH
-            # Check Database Channel first so we don't have to send 'find' in group
-            logger.info(f"⚡ Searching Database Channel for: {query}")
-            try:
-                db_msg = await self._search_smash_db(query)
+            # 1. PRIMARY FAST CACHE: Check Sentinel DB (ShakkyData)
+            if video_id:
+                db_msg = await self._search_sentinel_db(video_id)
                 if db_msg:
-                    logger.info(f"🎯 Cache Hit! Found in Database Channel: {db_msg.id}")
-                    file_path = await self._download_audio_file(self._app, db_msg, video_id or f"db_{db_msg.id}")
-                    if file_path:
-                        logger.info(f"✅ Instant Retrieval Successful: {file_path}")
-                        return file_path
-            except Exception as e:
-                logger.warning(f"DB search failed: {e}")
+                    logger.info(f"Sentinel DB Hit: Downloading {video_id}")
+                    try:
+                        return await self._download_audio_file(self._app, db_msg, video_id)
+                    except Exception as e:
+                        logger.warning(f"Sentinel Download failed: {e}")
 
-            # STEP 2B - Request via @YouMusicRobot if not in database
+            # 2. SECONDARY CACHE: Check SmashDB
+            if video_id:
+                old_db_msg = await self._search_in_channel(video_id)
+                if old_db_msg:
+                    logger.info(f"SmashDB Hit: Downloading {video_id}")
+                    try:
+                        return await self._download_audio_file(self._app, old_db_msg, video_id)
+                    except: pass
+            
+            # STEP 2B - Request via @YouMusicRobot
             if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
                 logger.debug(f"Resolving title for external search: {query}")
                 info = await self._get_song_info(link, fallback_title=raw_query)
@@ -1378,11 +1451,15 @@ class YouTubeAPI:
             file_path = await self._fetch_via_youmusicbot(query, title=title)
             if file_path:
                 logger.info(f"Acquired from Step 2B: {file_path}")
+                # PERSIST: Upload to Sentinel DB for future "super fast" access
+                if video_id:
+                    asyncio.create_task(self._upload_to_sentinel_db(file_path, title, video_id))
                 return file_path
                 
-            # Final fallback
-            logger.warning("Acquisition failed in both 2A and 2B. Final fallback attempt...")
-            return await self._download_fallback(link, video_id or "unknown")
+            fallback_res = await self._download_fallback(link, video_id or "unknown")
+            if fallback_res and video_id:
+                asyncio.create_task(self._upload_to_sentinel_db(fallback_res, (raw_query or query), video_id))
+            return fallback_res
     
     async def _download_fallback(self, link: str, video_id: str) -> Optional[str]:
         """Fallback download methods"""

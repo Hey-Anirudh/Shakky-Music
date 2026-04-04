@@ -36,11 +36,11 @@ SESSION_STRING = getenv("SESSION_STRING", None)      # For DB channel reads
 YOU_MUSIC_SESSION = getenv("YOU_MUSIC_SESSION", None)   # For @shadowmusicbase /find
 
 # ─── TELEGRAM DB CHANNELS ───────────────────────────────────
-CHANNEL_USERNAME     = getenv("CHANNEL_USERNAME", "@ShakkyData")     # Song archive channel
+DATABASE_CHANNEL     = getenv("DATABASE_CHANNEL", "ShakkyData")
+DATABASE_CHANNEL_ID  = int(getenv("DATABASE_CHANNEL_ID", "-1002307521741")) # ShakkyData Channel ID
+CHANNEL_USERNAME     = getenv("CHANNEL_USERNAME", "@shakkydb")     # Song archive channel
 GROUP_USERNAME       = getenv("GROUP_USERNAME", "shadowmusicbase")     # Song request group
 SONG_CHANNEL_ID      = int(getenv("SONG_CHANNEL_ID", "-1003791830381"))
-DATABASE_CHANNEL     = getenv("DATABASE_CHANNEL", "ShakkyData")
-DATABASE_CHANNEL_ID  = int(getenv("DATABASE_CHANNEL_ID", "-1002422501099"))
 
 # ─── MONGODB ────────────────────────────────────────────────
 MONGO_DB_URI = getenv("MONGO_DB_URI", None)
