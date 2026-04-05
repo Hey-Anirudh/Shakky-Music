@@ -93,20 +93,28 @@ async def play_commnd(client, message: Message, _):
     if not query:
         return await message.reply_text("➲ **Please provide a song name or link to play.**")
 
-    # Initial loading indicators
-    sticker_msg = None
+    # Sticker-only loading indicator
+    mystic = None
     try:
         from config import START_STICKER
-        import random
-        sticker_set = await client.get_sticker_set(START_STICKER)
-        if sticker_set and sticker_set.stickers:
-            sticker = random.choice(sticker_set.stickers)
-            sticker_msg = await message.reply_sticker(sticker.file_id)
+        # Try sending as file_id first (user provided specifics)
+        try:
+            mystic = await message.reply_sticker(START_STICKER)
+        except Exception:
+            # Fallback to random pick from set if file_id fails
+            import random
+            sticker_set = await client.get_sticker_set(START_STICKER)
+            if sticker_set and sticker_set.stickers:
+                sticker = random.choice(sticker_set.stickers)
+                mystic = await message.reply_sticker(sticker.file_id)
     except Exception as e:
         logger.debug(f"Failed to send sticker: {e}")
 
-    mystic = await message.reply_text("➲ **Searching.**")
-    asyncio.create_task(_animate_loader(mystic, sticker_msg))
+    # Fallback to text only if EVERYTHING fails
+    if not mystic:
+        mystic = await message.reply_text("➲ **Searching.**")
+
+    asyncio.create_task(_animate_loader(mystic))
 
     # --- Spotify Link Detection ---
     from shakky import Spotify
