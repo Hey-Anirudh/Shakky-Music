@@ -51,8 +51,8 @@ VIDEO_API_URL  = getenv("VIDEO_API_URL", "https://api.video.nexgenbots.xyz")
 API_KEY = getenv("API_KEY", None)
 
 # ─── SPOTIFY ────────────────────────────────────────────────
-SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", None)
-SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", None)
+SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", "22b6125bfe224587b722d6815002db2b")
+SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "c9c63c6fbf2f467c8bc68624851e9773")
 
 # ─── WEBAPP (SmashMusic) ────────────────────────────────────
 WEBAPP_PORT = int(getenv("WEBAPP_PORT", 8100))
