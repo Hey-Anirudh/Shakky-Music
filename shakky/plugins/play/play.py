@@ -31,7 +31,7 @@ from shakky import YouTube, app
 from shakky.utils.decorators.language import language
 from config import BANNED_USERS
 
-async def _animate_loader(mystic: Message):
+async def _animate_loader(mystic: Message, sticker: Message = None):
     """Animates the searching dots until message is deleted/edited."""
     frames = [
         "➲ **Searching.**", 
@@ -42,10 +42,14 @@ async def _animate_loader(mystic: Message):
     i = 0
     while True:
         try:
-            await asyncio.sleep(2.5) # Slower animation to prevent FloodWait
+            await asyncio.sleep(3.5) # Even slower to be safe
             await mystic.edit_text(frames[i % len(frames)])
             i += 1
-        except Exception: # Break if message deleted or edited by other code
+        except Exception:
+            # If the main message is gone, try to delete the sticker too
+            if sticker:
+                try: await sticker.delete()
+                except: pass
             break
 
 @app.on_message(
@@ -89,9 +93,20 @@ async def play_commnd(client, message: Message, _):
     if not query:
         return await message.reply_text("➲ **Please provide a song name or link to play.**")
 
-    # Initial loading message for external sources
+    # Initial loading indicators
+    sticker_msg = None
+    try:
+        from config import START_STICKER
+        import random
+        sticker_set = await client.get_sticker_set(START_STICKER)
+        if sticker_set and sticker_set.stickers:
+            sticker = random.choice(sticker_set.stickers)
+            sticker_msg = await message.reply_sticker(sticker.file_id)
+    except Exception as e:
+        logger.debug(f"Failed to send sticker: {e}")
+
     mystic = await message.reply_text("➲ **Searching.**")
-    asyncio.create_task(_animate_loader(mystic))
+    asyncio.create_task(_animate_loader(mystic, sticker_msg))
 
     # --- Spotify Link Detection ---
     from shakky import Spotify
@@ -108,12 +123,17 @@ async def play_commnd(client, message: Message, _):
                 return await mystic.edit_text(f"❌ Spotify Error: {e}")
         elif "playlist" in query or "album" in query or "artist" in query:
              try:
+                 # Fetch metadata first to know if we even have tracks
                  if "playlist" in query:
                      result, spotify_id = await Spotify.playlist(query)
                  elif "album" in query:
                      result, spotify_id = await Spotify.album(query)
                  else:
                      result, spotify_id = await Spotify.artist(query)
+                 
+                 # Optimization: Delete the loader early for playlists since processing result takes time
+                 try: await mystic.delete()
+                 except: pass
                  
                  await stream(
                      _, mystic, user_id, result, chat_id, user_name, chat_id,

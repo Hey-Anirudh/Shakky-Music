@@ -23,6 +23,7 @@ ASSUSERNAME      = getenv("ASSUSERNAME", "@RedBotAssistant")
 EVALOP           = list(map(int, getenv("EVALOP", "").split())) if getenv("EVALOP", "").strip() else []
 GPT_API          = getenv("GPT_API", None)
 DEEP_API         = getenv("DEEP_API", None)
+START_STICKER    = getenv("START_STICKER", "Minifreakyyf_by_fStikBot")
 
 # ─── 5 ASSISTANT SESSIONS (from ShrutiMusic) ────────────────
 STRING1 = getenv("STRING1", None)
