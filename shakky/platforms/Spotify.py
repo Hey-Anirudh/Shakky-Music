@@ -61,26 +61,29 @@ class SpotifyAPI:
                 "Accept-Language": "en-US,en;q=0.9"
             }
             
+            logger.info(f"Scraping embed URL: {embed_url}")
             async with session.get(embed_url, headers=headers, timeout=10) as resp:
                 if resp.status != 200:
+                    logger.warning(f"Spotify embed fetch failed with status {resp.status}")
                     return None
                 html = await resp.text()
 
             # 2. Extract Tracks and Artists
-            # The embed page usually has __NEXT_DATA__ or a list of items
             results = []
             
-            # Pattern for Individual Tracks in the list (most common in embeds)
-            # Example: "name":"Song Name","artists":[{"name":"Artist Name"}]
-            items = re.findall(r'{"name":"([^"]+)","artists":\[(.*?)\],"duration"', html)
+            # Pattern for Individual Tracks in the list (JSON format in state)
+            # We look for "name":"..." followed by "artists":[...]
+            # More robust regex that doesn't strictly depend on "duration" following immediately
+            items = re.findall(r'{"name":"([^"]+)","artists":\[(.*?)\],', html)
+            
+            logger.info(f"Regex found {len(items)} raw matches in embed HTML.")
             
             if items:
                 for name, artists_raw in items:
                     artists = re.findall(r'"name":"([^"]+)"', artists_raw)
-                    # Deduplicate artists and filter out common ones like Various Artists
                     artists = [a for a in artists if "Various Artists" not in a]
                     track_info = f"{name} {' '.join(artists)}".strip()
-                    if track_info:
+                    if track_info and track_info not in results:
                         results.append(track_info)
             
             # Fallback Pattern 1: Meta tags for single tracks or titles
