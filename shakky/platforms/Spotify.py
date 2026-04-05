@@ -43,39 +43,67 @@ class SpotifyAPI:
             })
         return self.session
 
-    async def _scrape_meta(self, url):
-        """Fallback: Scrape song/playlist title from Spotify HTML when API is 403 Forbidden."""
+    async def _scrape_meta(self, url: str):
+        """Scrapes Spotify metadata from the public HTML or embed page."""
         try:
+            # 1. Prepare embed URL for cleaner scraping
+            resource_id = url.split("/")[-1].split("?")[0]
+            resource_type = "playlist"
+            if "/track/" in url: resource_type = "track"
+            elif "/album/" in url: resource_type = "album"
+            elif "/artist/" in url: resource_type = "artist"
+            
+            embed_url = f"https://open.spotify.com/embed/{resource_type}/{resource_id}"
+            
             session = await self._get_session()
-            async with session.get(url) as resp:
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9"
+            }
+            
+            async with session.get(embed_url, headers=headers, timeout=10) as resp:
                 if resp.status != 200:
                     return None
                 html = await resp.text()
-                
-                # Extract og:title (Playlist or Track Name)
-                title_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
-                title = title_match.group(1) if title_match else "Unknown Spotify Content"
-                
-                # If it's a playlist, try to get tracks
-                tracks = []
-                if "/playlist/" in url:
-                    # Spotify embeds some track names in the HTML for SEO
-                    # Format: <a>Track Name</a>
-                    # This is limited but better than nothing
-                    # We look for track links: https://open.spotify.com/track/ID
-                    matches = re.finditer(r'<meta property="music:song" content="https://open\.spotify\.com/track/([^"]+)"', html)
-                    # For track names, they are often in the description or initial state JSON
-                    # A robust way is to look for the "name" field in the embedded JSON
-                    track_matches = re.findall(r'"name":"([^"]+)","has_lyrics"', html)
-                    if not track_matches:
-                        # Fallback to broad regex for track names in various lists
-                        track_matches = re.findall(r'title":"([^"]+)","artists"', html)
-                    
-                    tracks = list(set(track_matches))[:100]
-                
-                return {"title": title, "tracks": tracks}
+
+            # 2. Extract Tracks and Artists
+            # The embed page usually has __NEXT_DATA__ or a list of items
+            results = []
+            
+            # Pattern for Individual Tracks in the list (most common in embeds)
+            # Example: "name":"Song Name","artists":[{"name":"Artist Name"}]
+            items = re.findall(r'{"name":"([^"]+)","artists":\[(.*?)\],"duration"', html)
+            
+            if items:
+                for name, artists_raw in items:
+                    artists = re.findall(r'"name":"([^"]+)"', artists_raw)
+                    # Deduplicate artists and filter out common ones like Various Artists
+                    artists = [a for a in artists if "Various Artists" not in a]
+                    track_info = f"{name} {' '.join(artists)}".strip()
+                    if track_info:
+                        results.append(track_info)
+            
+            # Fallback Pattern 1: Meta tags for single tracks or titles
+            title_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
+            title = title_match.group(1) if title_match else "Unknown Spotify Content"
+            
+            if not results:
+                if title_match:
+                    name = title_match.group(1)
+                    # For tracks, og:title is often "Song - Single by Artist" or similar
+                    results.append(name.replace(" - Single", "").replace(" album by ", " ").strip())
+
+            # 3. Final cleanup of common HTML residue/artifacts
+            results = [re.sub(r'&#[0-9]+;', ' ', r).strip() for r in results]
+            
+            return {
+                "tracks": results,
+                "title": title,
+                "type": resource_type,
+                "id": resource_id
+            }
         except Exception as e:
-            logger.error(f"Scraper fallback failed: {e}")
+            logger.error(f"Scraper totally failed for {url}: {e}")
             return None
 
     async def track(self, link: str):
