@@ -65,9 +65,6 @@ async def play_commnd(client, message: Message, _):
     2. Search YouTube
     3. Call stream engine
     """
-    if len(message.command) < 2:
-        return await message.reply_text("➲ **Please provide a song name or link to play.**")
-
     query = message.text.split(None, 1)[1] if len(message.command) > 1 else None
     
     # Common variables needed for all play types
@@ -76,22 +73,36 @@ async def play_commnd(client, message: Message, _):
     chat_id = message.chat.id
     forceplay = "force" in message.command[0]
 
+    # --- Sticker-only loading indicator helper ---
+    async def send_loader():
+        try:
+            from config import START_STICKER
+            return await message.reply_sticker(START_STICKER)
+        except: return await message.reply_text("➲ **Searching.**")
+
     # --- Telegram Media (Reply) Detection ---
     if message.reply_to_message:
-        if message.reply_to_message.audio or message.reply_to_message.voice or message.reply_to_message.video:
-            mystic = await message.reply_text("➲ **Processing Telegram Media...**")
-            
-            try:
-                await stream(
-                    _, mystic, user_id, message.reply_to_message, chat_id, user_name, chat_id,
-                    streamtype="telegram", forceplay=forceplay
-                )
-                return
-            except Exception as e:
-                return await mystic.edit_text(f"❌ Telegram Media Error: {e}")
+        rm = message.reply_to_message
+        if rm.audio or rm.voice or rm.video or rm.document:
+            # If it's a document, check if it's an audio/video file
+            if rm.document and not (rm.document.mime_type.startswith("audio") or rm.document.mime_type.startswith("video")):
+                 pass # Not a playable document
+            else:
+                mystic = await send_loader()
+                asyncio.create_task(_animate_loader(mystic))
+                
+                try:
+                    await stream(
+                        _, mystic, user_id, rm, chat_id, user_name, chat_id,
+                        streamtype="telegram", forceplay=forceplay
+                    )
+                    return
+                except Exception as e:
+                    # In case of error, the loader will be auto-deleted by stream or _animate_loader
+                    return await message.reply_text(f"❌ Telegram Media Error: {e}")
 
-    if not query:
-        return await message.reply_text("➲ **Please provide a song name or link to play.**")
+    if not query and not message.reply_to_message:
+        return await message.reply_text("➲ **Please provide a song name or reply to an audio file.**")
 
     # Sticker-only loading indicator
     mystic = None
