@@ -644,9 +644,10 @@ class Call(PyTgCalls):
                 db[chat_id][0]["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
             except Exception as e:
-                LOGGER.error(f"change_stream failed for {chat_id}: {e}. Skipping...")
+                err_msg = str(e)
+                LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}. Skipping...")
                 try:
-                    await app.send_message(original_chat_id, text=f"⚠️ **Error streaming:** `{title}`\n➲ **Skipping to next track...**")
+                    await app.send_message(original_chat_id, text=f"⚠️ **Streaming Error:** `{title}`\n**Reason:** `{err_msg[:100]}`\n➲ **Skipping to next track...**")
                 except:
                     pass
                 if len(db[chat_id]) > 0:

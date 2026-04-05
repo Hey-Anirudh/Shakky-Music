@@ -346,21 +346,24 @@ async def put_queue(
     
     try:
         from shakky.utils.formatters import time_to_seconds
-        duration_in_seconds = time_to_seconds(duration) - 3
+        if duration and ":" in str(duration):
+            duration_in_seconds = time_to_seconds(duration) - 3
+        else:
+            duration_in_seconds = int(duration) if str(duration).isdigit() else 0
     except:
         duration_in_seconds = 0
 
     song_info = {
         "chat_id": chat_id,
-        "file": file,
+        "file": os.path.abspath(file) if os.path.exists(file) else file,
         "title": title,
-        "dur": duration,
+        "dur": duration or "0:00",
         "by": user_name,
         "vidid": vidid,
         "user_id": user_id,
         "streamtype": streamtype,
         "start_time": 0,
-        "seconds": duration_in_seconds,
+        "seconds": max(0, duration_in_seconds),
         "played": 0,
     }
     
