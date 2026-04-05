@@ -44,9 +44,9 @@ class SpotifyAPI:
         return self.session
 
     async def _scrape_meta(self, url: str):
-        """Scrapes Spotify metadata from the public HTML or embed page."""
+        """Scrapes Spotify metadata via JSON state extraction from the embed page."""
         try:
-            # 1. Prepare embed URL for cleaner scraping
+            # 1. Prepare embed URL for consistent JSON state
             resource_id = url.split("/")[-1].split("?")[0]
             resource_type = "playlist"
             if "/track/" in url: resource_type = "track"
@@ -58,47 +58,77 @@ class SpotifyAPI:
             session = await self._get_session()
             headers = {
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
-                "Accept-Language": "en-US,en;q=0.9"
             }
             
             logger.info(f"Scraping embed URL: {embed_url}")
             async with session.get(embed_url, headers=headers, timeout=10) as resp:
                 if resp.status != 200:
-                    logger.warning(f"Spotify embed fetch failed with status {resp.status}")
+                    logger.warning(f"Spotify embed fetch failed (status {resp.status})")
                     return None
                 html = await resp.text()
 
-            # 2. Extract Tracks and Artists
+            # 2. Extract JSON State (Most robust way)
             results = []
             
-            # Pattern for Individual Tracks in the list (JSON format in state)
-            # We look for "name":"..." followed by "artists":[...]
-            # More robust regex that doesn't strictly depend on "duration" following immediately
-            items = re.findall(r'{"name":"([^"]+)","artists":\[(.*?)\],', html)
+            # The embed page usually has a script containing track info
+            # We search for the JSON blob in the HTML
+            import json
             
-            logger.info(f"Regex found {len(items)} raw matches in embed HTML.")
+            # Attempt 1: Search for state in specialized script tags
+            json_state = None
+            script_match = re.search(r'<script id="resource" type="application/json">(.*?)</script>', html, re.S) or \
+                           re.search(r'<script id="__NEXT_DATA__" type="application/json">(.*?)</script>', html, re.S)
             
-            if items:
+            if script_match:
+                try:
+                    state = json.loads(script_match.group(1))
+                    
+                    # Traverse state for track data (structure varies slightly by resource type)
+                    tracks_data = []
+                    if "props" in state and "pageProps" in state["props"]:
+                        pp = state["props"]["pageProps"]["state"]
+                        # Different paths for playlist/album/track
+                        if "trackList" in pp:
+                            tracks_data = pp["trackList"]
+                        elif "data" in pp and "tracks" in pp["data"]:
+                             tracks_data = pp["data"]["tracks"].get("items", [pp["data"]["tracks"]]) if isinstance(pp["data"]["tracks"], dict) else pp["data"]["tracks"]
+
+                    # Process extracted track data
+                    if tracks_data:
+                        for item in tracks_data:
+                            # Handle both direct track objects and wrapped ones (item['track'])
+                            track = item.get("track", item) if isinstance(item, dict) else item
+                            if isinstance(track, dict) and "name" in track:
+                                name = track["name"]
+                                artists = [a["name"] for a in track.get("artists", []) if "Various Artists" not in a["name"]]
+                                results.append(f"{name} {' '.join(artists)}".strip())
+                except Exception as je:
+                    logger.warning(f"JSON state parsing failed: {je}")
+
+            # Attempt 2: Regex Backup (if JSON extraction fails)
+            if not results:
+                # Target items in the raw HTML string
+                items = re.findall(r'{"name":"([^"]+)","artists":\[(.*?)\],', html)
+                logger.info(f"Regex found {len(items)} items.")
                 for name, artists_raw in items:
                     artists = re.findall(r'"name":"([^"]+)"', artists_raw)
                     artists = [a for a in artists if "Various Artists" not in a]
                     track_info = f"{name} {' '.join(artists)}".strip()
                     if track_info and track_info not in results:
                         results.append(track_info)
-            
-            # Fallback Pattern 1: Meta tags for single tracks or titles
+
+            # Metadata (Title)
             title_match = re.search(r'<meta property="og:title" content="([^"]+)"', html)
             title = title_match.group(1) if title_match else "Unknown Spotify Content"
             
-            if not results:
-                if title_match:
-                    name = title_match.group(1)
-                    # For tracks, og:title is often "Song - Single by Artist" or similar
-                    results.append(name.replace(" - Single", "").replace(" album by ", " ").strip())
-
-            # 3. Final cleanup of common HTML residue/artifacts
-            results = [re.sub(r'&#[0-9]+;', ' ', r).strip() for r in results]
+            # 3. Final cleanup and safety check
+            results = [re.sub(r'&#[0-9]+;', ' ', r).strip() for r in results if r]
             
+            if not results and title_match:
+                # Last resort: just the main title if it's a single track
+                results.append(title.replace(" - Single", "").replace(" album by ", " ").strip())
+
+            logger.info(f"Scraper resolved {len(results)} tracks from {url}")
             return {
                 "tracks": results,
                 "title": title,
