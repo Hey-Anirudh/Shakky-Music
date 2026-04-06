@@ -19,12 +19,8 @@ from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
 from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
 from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
 
-try:
-    from pytgcalls.implementation import NativeImplementation, NodeJSImplementation
-except ImportError:
-    # Handle older versions or missing implementation modules
-    class NativeImplementation: pass
-    class NodeJSImplementation: pass
+# Implementation selection is now handled via PYTGCALLS_IMPLEMENTATION environment variable
+# to maintain compatibility across different dev versions of pytgcalls.
 
 import config
 from shakky import YouTube, app
@@ -70,23 +66,16 @@ async def _clear_(chat_id):
 
 class Call(PyTgCalls):
     def __init__(self):
-        # Strictly enforce Native Implementation for VPS stability
-        try:
-            from pytgcalls.implementation import NativeImplementation
-            impl = NativeImplementation()
-            LOGGER.info("PyTgCalls: Native implementation loaded successfully.")
-        except Exception as e:
-            LOGGER.error(f"PyTgCalls: CRITICAL: Could not load Native implementation: {e}")
-            LOGGER.info("PyTgCalls: Attempting fallback to default (Node is likely missing on VPS).")
-            impl = None
-
+        # We rely on defaults or PYTGCALLS_IMPLEMENTATION env var (set in vps_fix.sh)
+        # The 'implementation' keyword is NOT supported in some pytgcalls 3.x builds.
+        
         self.userbot1 = Client(
             name="Ass1",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
         )
-        self.one = PyTgCalls(self.userbot1, cache_duration=100, implementation=impl)
+        self.one = PyTgCalls(self.userbot1, cache_duration=100)
         
         self.userbot2 = Client(
             name="Ass2",
@@ -94,7 +83,7 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING2),
         )
-        self.two = PyTgCalls(self.userbot2, cache_duration=100, implementation=impl)
+        self.two = PyTgCalls(self.userbot2, cache_duration=100)
         
         self.userbot3 = Client(
             name="Ass3",
@@ -102,7 +91,7 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING3),
         )
-        self.three = PyTgCalls(self.userbot3, cache_duration=100, implementation=impl)
+        self.three = PyTgCalls(self.userbot3, cache_duration=100)
         
         self.userbot4 = Client(
             name="Ass4",
@@ -110,7 +99,7 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING4),
         )
-        self.four = PyTgCalls(self.userbot4, cache_duration=100, implementation=impl)
+        self.four = PyTgCalls(self.userbot4, cache_duration=100)
         
         self.userbot5 = Client(
             name="Ass5",
@@ -118,7 +107,7 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING5),
         )
-        self.five = PyTgCalls(self.userbot5, cache_duration=100, implementation=impl)
+        self.five = PyTgCalls(self.userbot5, cache_duration=100)
         self._locks = {}
         self._last_skip = {}
 
