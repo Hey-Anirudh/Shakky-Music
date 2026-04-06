@@ -66,6 +66,6 @@ async def seek_comm(client, message: Message, _, chat_id):
     playing[0]["start_time"] = time.time() - to_seek # Re-align start time for accurate WebApp elapsed tracking
     
     await mystic.edit_text(
-        _["admin_25"].format(to_seek_str) + "\n_VC & WebApp Synced_",
+        _["admin_25"].format(to_seek_str, message.from_user.mention if message.from_user else "Admin") + "\n_VC & WebApp Synced_",
         reply_markup=close_markup(_)
     )

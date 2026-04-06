@@ -17,7 +17,14 @@ from pytgcalls.exceptions import (
 from pytgcalls.types import Update
 from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
 from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
-from pytgcalls.types.stream import StreamAudioEnded
+from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
+
+try:
+    from pytgcalls.implementation import NativeImplementation, NodeJSImplementation
+except ImportError:
+    # Handle older versions or missing implementation modules
+    class NativeImplementation: pass
+    class NodeJSImplementation: pass
 
 import config
 from shakky import YouTube, app
@@ -63,16 +70,23 @@ async def _clear_(chat_id):
 
 class Call(PyTgCalls):
     def __init__(self):
+        # Strictly enforce Native Implementation for VPS stability
+        try:
+            from pytgcalls.implementation import NativeImplementation
+            impl = NativeImplementation()
+            LOGGER.info("PyTgCalls: Native implementation loaded successfully.")
+        except Exception as e:
+            LOGGER.error(f"PyTgCalls: CRITICAL: Could not load Native implementation: {e}")
+            LOGGER.info("PyTgCalls: Attempting fallback to default (Node is likely missing on VPS).")
+            impl = None
+
         self.userbot1 = Client(
             name="Ass1",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
         )
-        self.one = PyTgCalls(
-            self.userbot1,
-            cache_duration=100,
-        )
+        self.one = PyTgCalls(self.userbot1, cache_duration=100, implementation=impl)
         
         self.userbot2 = Client(
             name="Ass2",
@@ -80,40 +94,31 @@ class Call(PyTgCalls):
             api_hash=config.API_HASH,
             session_string=str(config.STRING2),
         )
-        self.two = PyTgCalls(
-            self.userbot2,
-            cache_duration=100,
-        )
+        self.two = PyTgCalls(self.userbot2, cache_duration=100, implementation=impl)
+        
         self.userbot3 = Client(
             name="Ass3",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING3),
         )
-        self.three = PyTgCalls(
-            self.userbot3,
-            cache_duration=100,
-        )
+        self.three = PyTgCalls(self.userbot3, cache_duration=100, implementation=impl)
+        
         self.userbot4 = Client(
             name="Ass4",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING4),
         )
-        self.four = PyTgCalls(
-            self.userbot4,
-            cache_duration=100,
-        )
+        self.four = PyTgCalls(self.userbot4, cache_duration=100, implementation=impl)
+        
         self.userbot5 = Client(
             name="Ass5",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING5),
         )
-        self.five = PyTgCalls(
-            self.userbot5,
-            cache_duration=100,
-        )
+        self.five = PyTgCalls(self.userbot5, cache_duration=100, implementation=impl)
         self._locks = {}
         self._last_skip = {}
 
@@ -644,12 +649,20 @@ class Call(PyTgCalls):
                 db[chat_id][0]["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
             except Exception as e:
+                import traceback
                 err_msg = str(e)
-                LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}. Skipping...")
+                err_full = traceback.format_exc()
+                LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}")
+                # Log the FULL error for permanent fix diagnosis
+                with open("last_error.txt", "w", encoding="utf-8") as f:
+                    from datetime import datetime
+                    f.write(f"Timestamp: {datetime.now()}\nChat ID: {chat_id}\nTitle: {title}\nError: {err_msg}\n\nTraceback:\n{err_full}")
+                
                 try:
                     await app.send_message(original_chat_id, text=f"⚠️ **Streaming Error:** `{title}`\n**Reason:** `{err_msg[:100]}`\n➲ **Skipping to next track...**")
                 except:
                     pass
+                
                 if len(db[chat_id]) > 0:
                     # Pop failed track
                     db[chat_id].pop(0)
@@ -814,7 +827,7 @@ class Call(PyTgCalls):
         @self.four.on_stream_end()
         @self.five.on_stream_end()
         async def stream_end_handler1(client, update: Update):
-            if not isinstance(update, StreamAudioEnded):
+            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
                 return
             try:
                 await self.change_stream(client, update.chat_id)
