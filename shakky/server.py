@@ -250,6 +250,11 @@ async def get_group_members(raw_id: str):
     members.reverse()
     return {"status": "ok", "members": members[:50]}
 
+# Silently handle /api/new_message (called by external service, not part of Shakky)
+@app.post("/api/new_message")
+async def handle_new_message():
+    return {"status": "ok"}
+
 @app.get("/room/{chat_id}", response_class=HTMLResponse)
 @app.get("/", response_class=HTMLResponse)
 async def get_room(chat_id: Optional[str] = None):
