@@ -8,7 +8,16 @@ from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
 from pyrogram.types import InlineKeyboardMarkup
-from pytgcalls import PyTgCalls, StreamType
+try:
+    from pytgcalls import PyTgCalls, StreamType
+except ImportError:
+    try:
+        from pytgcalls.pytgcalls import PyTgCalls
+        from pytgcalls.types import StreamType
+    except ImportError:
+        # Final fallback for older 3.x versions
+        from pytgcalls.calls import PyTgCalls
+        from pytgcalls.types.stream import StreamType
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
     NoActiveGroupCall,
