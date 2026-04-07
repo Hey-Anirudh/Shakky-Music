@@ -1,3 +1,8 @@
+import os
+# Force PyTgCalls to use the native implementation (ntgcalls) instead of Node.js engine
+os.environ["PYTGCALLS_IMPLEMENTATION"] = "native"
+os.environ["NTGCALLS"] = "1"
+
 from .logging import LOGGER
 from shakky.core.bot import ani
 from shakky.core.dir import dirr

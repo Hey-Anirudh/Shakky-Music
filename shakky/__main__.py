@@ -1,3 +1,7 @@
+import os
+os.environ["PYTGCALLS_IMPLEMENTATION"] = "native"
+os.environ["NTGCALLS"] = "1"
+
 import logging
 import asyncio
 import importlib
