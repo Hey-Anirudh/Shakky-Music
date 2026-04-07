@@ -1419,7 +1419,18 @@ class YouTubeAPI:
     async def _do_download(self, link, query, video_id, raw_query):
         """Actual download logic, called under dedup lock + semaphore."""
         async with self._download_semaphore:
-            # 1. PRIMARY FAST CACHE: Check Sentinel DB (ShakkyData)
+            # 1. OPTIMIZED YT-DLP DOWNLOAD (requested as 'first thing')
+            # This ensures high quality and no 'demos' using JS runtime
+            if video_id:
+                logger.info(f"Trying optimized yt-dlp for: {video_id}")
+                ytdlp_res = await self._download_ytdlp(link, video_id)
+                if ytdlp_res:
+                    logger.info(f"✅ yt-dlp success: {ytdlp_res}")
+                    # Persist to Sentinel DB for future speedups
+                    asyncio.create_task(self._upload_to_sentinel_db(ytdlp_res, (raw_query or query), video_id))
+                    return ytdlp_res
+
+            # 2. CACHE HITS: Check Sentinel DB and SmashDB (Fallback if yt-dlp fails)
             if video_id:
                 db_msg = await self._search_sentinel_db(video_id)
                 if db_msg:
@@ -1429,8 +1440,6 @@ class YouTubeAPI:
                     except Exception as e:
                         logger.warning(f"Sentinel Download failed: {e}")
 
-            # 2. SECONDARY CACHE: Check SmashDB
-            if video_id:
                 old_db_msg = await self._search_in_channel(video_id)
                 if old_db_msg:
                     logger.info(f"SmashDB Hit: Downloading {video_id}")
@@ -1461,8 +1470,49 @@ class YouTubeAPI:
                 asyncio.create_task(self._upload_to_sentinel_db(fallback_res, (raw_query or query), video_id))
             return fallback_res
     
+    async def _download_ytdlp(self, link: str, video_id: str) -> Optional[str]:
+        """Optimized yt-dlp download with JS runtime and format filtering"""
+        try:
+            file_path = os.path.join(self.download_folder, f"{video_id}.mp3")
+            
+            ydl_opts = {
+                'format': 'bestaudio[format_id!*=preview]/bestaudio/best',
+                'outtmpl': file_path.replace('.mp3', '') + '.%(ext)s',
+                'quiet': True,
+                'no_warnings': True,
+                'noplaylist': True,
+                'js_runtimes': {'node': {}},
+                'postprocessors': [{
+                    'key': 'FFmpegExtractAudio',
+                    'preferredcodec': 'mp3',
+                    'preferredquality': '192',
+                }],
+            }
+            
+            def _ytdlp_audio():
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    ydl.download([link])
+            
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, _ytdlp_audio)
+            
+            # Check for the resulting mp3
+            if os.path.exists(file_path) and os.path.getsize(file_path) > 0:
+                return file_path
+            
+            # Check for other extensions if postprocessor failed but file exists
+            for ext in ["m4a", "opus", "webm"]:
+                possible_path = os.path.join(self.download_folder, f"{video_id}.{ext}")
+                if os.path.exists(possible_path):
+                    return possible_path
+                    
+        except Exception as e:
+            logger.debug(f"Optimized yt-dlp failed: {e}")
+        
+        return None
+
     async def _download_fallback(self, link: str, video_id: str) -> Optional[str]:
-        """Fallback download methods"""
+        """Fallback download methods (API)"""
         if API_URL and API_KEY:
             try:
                 api_url = f"{API_URL}/song/{video_id}?api={API_KEY}"
@@ -1488,37 +1538,6 @@ class YouTubeAPI:
                                         return file_path
             except Exception as e:
                 logger.debug(f"API fallback failed: {e}")
-        
-        try:
-            logger.info("Trying yt-dlp...")
-            file_path = os.path.join(self.download_folder, f"{video_id}.mp3")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': file_path.replace('.mp3', '') + '.%(ext)s',
-                'quiet': True,
-                'no_warnings': True,
-                'postprocessors': [{
-                    'key': 'FFmpegExtractAudio',
-                    'preferredcodec': 'mp3',
-                    'preferredquality': '192',
-                }],
-            }
-            
-            def _ytdlp_audio():
-                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                    ydl.download([link])
-            
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, _ytdlp_audio)
-            
-            for ext in ["mp3", "m4a", "opus", "webm"]:
-                possible_path = os.path.join(self.download_folder, f"{video_id}.{ext}")
-                if os.path.exists(possible_path):
-                    logger.info(f"yt-dlp download successful: {possible_path}")
-                    return possible_path
-                    
-        except Exception as e:
-            logger.debug(f"yt-dlp fallback failed: {e}")
         
         return None
     

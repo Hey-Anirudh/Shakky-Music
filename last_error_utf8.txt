@@ -1,0 +1,150 @@
+﻿python : [02-Apr-26 23:45:51 - INFO] - 
+shakky.core.mongo - Connecting s ...
+At line:1 char:1
++ python -m shakky 2>&1 | Out-File 
+-FilePath last_error.txt; Get-Conten ...
++ ~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: 
+    ([02-Apr-26 23:4...onnecting s ...:Str  
+  ing) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommand 
+   Error
+ 
+[02-Apr-26 23:45:51 - INFO] - 
+shakky.core.mongo - Connected s .
+[02-Apr-26 23:45:51 - INFO] - 
+shakky.core.dir - D s U !.
+[02-Apr-26 23:45:51 - INFO] - 
+shakky.core.git - Skipping Git operations 
+for local deployment.
+[02-Apr-26 23:45:51 - INFO] - shakky.misc - 
+\u1d05\u1d00\u1d1b\u1d00\u0299\u1d00s\u1d07 
+s\u028f\u0274\u1d04 \u1d20\u1d07\u0280\u026a
+\u0493\u026a\u1d07\u1d05 \U0001f497
+[02-Apr-26 23:45:51 - INFO] - 
+shakky.core.bot - Initializing Bot...
+[02-Apr-26 23:45:52 - INFO] - shakky.misc - 
+s\u1d1c\u1d05\u1d0f \u1d1cs\u1d07\u0280s 
+\u1d05\u1d0f\u0274\u1d07..
+[02-Apr-26 23:45:56 - ERROR] - 
+shakky.core.bot - FATAL: Bot failed to 
+start: Telegram says: [420 FLOOD_WAIT_X] - 
+A wait of 2071 seconds is required (caused 
+by "auth.ImportBotAuthorization")
+[02-Apr-26 23:45:56 - ERROR] - 
+shakky.core.bot - Traceback (most recent 
+call last):
+  File "C:\Users\Anirudh\Downloads\files 
+(2)\shakky\shakky\core\bot.py", line 21, in 
+start
+    await super().start()
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\utilities\start.py", line 86, 
+in start
+    await self.authorize()
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\client.py", line 395, in authorize
+    return await 
+self.sign_in_bot(self.bot_token)
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\auth\sign_in_bot.py", line 51, 
+in sign_in_bot
+    r = await self.invoke(
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\advanced\invoke.py", line 94, 
+in invoke
+    r = await session.invoke(
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\session\session.py", line 406, in invoke
+    return await self.send(query, 
+timeout=timeout)
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\session\session.py", line 374, in send
+    RPCError.raise_it(result, type(data))
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\errors\rpc_error.py", line 91, in 
+raise_it
+    raise getattr(
+pyrogram.errors.exceptions.flood_420.FloodWa
+it: Telegram says: [420 FLOOD_WAIT_X] - A 
+wait of 2071 seconds is required (caused by 
+"auth.ImportBotAuthorization")
+
+Traceback (most recent call last):
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\runpy.py", line 
+196, in _run_module_as_main
+    return _run_code(code, main_globals, 
+None,
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\runpy.py", line 
+86, in _run_code
+    exec(code, run_globals)
+  File "C:\Users\Anirudh\Downloads\files 
+(2)\shakky\shakky\__main__.py", line 91, in 
+<module>
+    asyncio.get_event_loop().run_until_compl
+ete(init())
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\asyncio\base_events
+.py", line 649, in run_until_complete
+    return future.result()
+  File "C:\Users\Anirudh\Downloads\files 
+(2)\shakky\shakky\__main__.py", line 42, in 
+init
+    await app.start()
+  File "C:\Users\Anirudh\Downloads\files 
+(2)\shakky\shakky\core\bot.py", line 26, in 
+start
+    raise e
+  File "C:\Users\Anirudh\Downloads\files 
+(2)\shakky\shakky\core\bot.py", line 21, in 
+start
+    await super().start()
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\utilities\start.py", line 86, 
+in start
+    await self.authorize()
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\client.py", line 395, in authorize
+    return await 
+self.sign_in_bot(self.bot_token)
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\auth\sign_in_bot.py", line 51, 
+in sign_in_bot
+    r = await self.invoke(
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\methods\advanced\invoke.py", line 94, 
+in invoke
+    r = await session.invoke(
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\session\session.py", line 406, in invoke
+    return await self.send(query, 
+timeout=timeout)
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\session\session.py", line 374, in send
+    RPCError.raise_it(result, type(data))
+  File "C:\Users\Anirudh\AppData\Local\Progr
+ams\Python\Python310\lib\site-packages\pyrog
+ram\errors\rpc_error.py", line 91, in 
+raise_it
+    raise getattr(
+pyrogram.errors.exceptions.flood_420.FloodWa
+it: Telegram says: [420 FLOOD_WAIT_X] - A 
+wait of 2071 seconds is required (caused by 
+"auth.ImportBotAuthorization")
+[02-Apr-26 23:45:56 - INFO] - pytgcalls - 
+Node.js stopped
