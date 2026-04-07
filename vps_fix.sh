@@ -1,40 +1,47 @@
 #!/bin/bash
-# vps_fix.sh - Permanent fix for "Node.js not running" error in Shakky bot
-# Run this on your VPS as root (sudo bash vps_fix.sh)
+# vps_fix.sh - Enhanced repair for ARM/x64 VPS
+# Run as root: sudo bash vps_fix.sh
 
-echo "--- STARTING SHAKKY VPS REPAIR ---"
+echo "--- SHAKKY VPS REPAIR v2.0 ---"
 
-# 1. Update system package list
-echo "Updating system..."
+# 1. Core Native Dependencies
+echo "Installing media libraries..."
 sudo apt update -y
+sudo apt install -y ffmpeg libopus-dev libglib2.0-0 pkg-config \
+    libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
+    libswresample-dev libswscale-dev python3-pip python3-dev \
+    build-essential curl nodejs
 
-# 2. Install essential system libraries for Native Streaming (ntgcalls)
-echo "Installing essential media libraries..."
-sudo apt install -y libopus0 libglib2.0-0 ffmpeg python3-pip
+# 2. Fix Node Path (Common ARM Issue)
+echo "Syncing Node.js paths..."
+NODE_PATH=$(which node)
+if [ ! -z "$NODE_PATH" ]; then
+    sudo ln -sf "$NODE_PATH" /usr/bin/node
+    sudo ln -sf "$NODE_PATH" /usr/local/bin/node
+fi
 
-# 3. Ensure Node.js is installed as a reliable backup
-if ! command -v node \u0026\u003e /dev/null
-then
-    echo "Node.js not found. Installing Node.js 18..."
-    curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-    sudo apt install -y nodejs
+# 3. Clean environment logic
+echo "Resetting environment implementation..."
+sed -i '/PYTGCALLS_IMPLEMENTATION/d' ~/.bashrc
+# On ARM, we default to javascript because ntgcalls wheels are often missing for 3.x dev
+if [[ $(uname -m) == *"aarch64"* ]]; then
+    echo "ARM detected: Defaulting to JavaScriptCore for stability."
+    echo 'export PYTGCALLS_IMPLEMENTATION="javascript"' >> ~/.bashrc
+    export PYTGCALLS_IMPLEMENTATION="javascript"
 else
-    echo "Node.js already installed: $(node -v)"
+    echo "x86/x64 detected: Defaulting to NativeCore."
+    echo 'export PYTGCALLS_IMPLEMENTATION="native"' >> ~/.bashrc
+    export PYTGCALLS_IMPLEMENTATION="native"
 fi
 
-# 4. Verify/Reinstall Python dependencies to ensure binary compatibility
-echo "Refreshing Python dependencies..."
-pip3 install --upgrade pip
-pip3 install wheel
-pip3 install --ignore-installed ntgcalls pytgcalls==3.0.0.dev20
-
-# 5. Set environment variable for the current session and persistent profile
-echo "Setting implementation preferences..."
-export PYTGCALLS_IMPLEMENTATION=\"native\"
-if ! grep -q \"PYTGCALLS_IMPLEMENTATION\" ~/.bashrc; then
-    echo 'export PYTGCALLS_IMPLEMENTATION=\"native\"' \u003e\u003e ~/.bashrc
-fi
+# 4. Refresh Dependencies
+echo "Refreshing Python Core..."
+python3 -m pip install --upgrade pip
+# Install with javascript extra to ensure tgcalls is ready
+pip3 install "pytgcalls[javascript]==3.0.0.dev20" --upgrade
+# Try to install ntgcalls but don't fail if it's missing (JS will take over)
+pip3 install ntgcalls==3.0.0.dev20 || echo "Native wheel missing for this arch. Using JS fallback."
 
 echo "--- REPAIR COMPLETE ---"
-echo "Please restart your bot now."
-echo "If issues persist, check 'last_error.txt' in the bot directory."
+echo "Please restart your bot."
+

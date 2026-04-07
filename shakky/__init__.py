@@ -1,6 +1,6 @@
 import os
-# Force PyTgCalls to use the native implementation (ntgcalls) instead of Node.js engine
-os.environ["PYTGCALLS_IMPLEMENTATION"] = "native"
+# Try to use Native Core (ntgcalls) by default, but allow fallbacks
+os.environ["PYTGCALLS_IMPLEMENTATION"] = os.getenv("PYTGCALLS_IMPLEMENTATION", "native")
 os.environ["NTGCALLS"] = "1"
 
 from .logging import LOGGER

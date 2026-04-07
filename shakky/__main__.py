@@ -1,5 +1,5 @@
 import os
-os.environ["PYTGCALLS_IMPLEMENTATION"] = "native"
+os.environ["PYTGCALLS_IMPLEMENTATION"] = os.getenv("PYTGCALLS_IMPLEMENTATION", "native")
 os.environ["NTGCALLS"] = "1"
 
 import logging
