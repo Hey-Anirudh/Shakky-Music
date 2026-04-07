@@ -1484,16 +1484,18 @@ class YouTubeAPI:
                 'js_runtimes': {'node': {}},
                 'extractor_args': {
                     'youtube': {
-                        'player_client': ['ios', 'android'],
+                        'player_client': ['tv', 'ios'],
                         'skip': ['webpage', 'hls', 'dash']
                     }
                 },
                 'geo_bypass': True,
                 'no_check_certificate': True,
+                'check_formats': False,
                 'http_headers': {
-                    'User-Agent': 'com.google.ios.youtube/19.12.3 (iPhone16,1; U; CPU iOS 17_4_1 like Mac OS X; en_US)',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
                     'Accept': '*/*',
-                    'Accept-Language': 'en-us,en;q=0.5',
+                    'Accept-Language': 'en-US,en;q=0.9',
+                    'Referer': 'https://www.youtube.com/',
                 },
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
