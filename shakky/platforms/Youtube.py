@@ -1482,6 +1482,19 @@ class YouTubeAPI:
                 'no_warnings': True,
                 'noplaylist': True,
                 'js_runtimes': {'node': {}},
+                'extractor_args': {
+                    'youtube': {
+                        'player_client': ['ios', 'android'],
+                        'skip': ['webpage', 'hls', 'dash']
+                    }
+                },
+                'geo_bypass': True,
+                'no_check_certificate': True,
+                'http_headers': {
+                    'User-Agent': 'com.google.ios.youtube/19.12.3 (iPhone16,1; U; CPU iOS 17_4_1 like Mac OS X; en_US)',
+                    'Accept': '*/*',
+                    'Accept-Language': 'en-us,en;q=0.5',
+                },
                 'postprocessors': [{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
