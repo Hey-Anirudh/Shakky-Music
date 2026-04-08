@@ -20,7 +20,7 @@ async def timer():
                 continue
             
             # Auto-Recovery: if song hangs past its duration
-            if db[chat_id][0]["played"] >= duration + 4:
+            if db[chat_id][0]["played"] >= duration + 10:
                 try:
                     from shakky.core.call import ani
                     from shakky.utils.database import group_assistant

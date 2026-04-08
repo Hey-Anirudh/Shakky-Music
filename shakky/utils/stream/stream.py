@@ -347,7 +347,7 @@ async def put_queue(
     try:
         from shakky.utils.formatters import time_to_seconds
         if duration and ":" in str(duration):
-            duration_in_seconds = time_to_seconds(duration) - 3
+            duration_in_seconds = time_to_seconds(duration)
         else:
             duration_in_seconds = int(duration) if str(duration).isdigit() else 0
     except:
