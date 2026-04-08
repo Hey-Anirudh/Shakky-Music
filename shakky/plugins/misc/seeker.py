@@ -18,23 +18,10 @@ async def timer():
             duration = int(playing[0]["seconds"])
             if duration == 0:
                 continue
-            
-            # Auto-Recovery: if song hangs past its duration
-            if db[chat_id][0]["played"] >= duration + 10:
-                try:
-                    from shakky.core.call import ani
-                    from shakky.utils.database import group_assistant
-                    # Use the correct assistant for this chat
-                    assistant = await group_assistant(ani, chat_id)
-                    # Clear the anti-duplicate cooldown so watchdog skip always works
-                    ani._last_skip.pop(chat_id, None)
-                    LOGGER.info(f"[watchdog] Song hung past duration in {chat_id} (played={db[chat_id][0]['played']}, dur={duration}). Force-skipping.")
-                    asyncio.create_task(ani.change_stream(assistant, chat_id))
-                    continue
-                except Exception as e:
-                    LOGGER.error(f"[watchdog] Recovery failed for {chat_id}: {e}")
-                    continue
-                    
+            # Removed the time-based force skip.
+            # We now rely entirely on pytgcalls' natural on_stream_end event 
+            # to transition songs, which fires when the ffmpeg audio pipe actually closes.
+            # This prevents songs from being cut off early.
             db[chat_id][0]["played"] += 1
 
 
