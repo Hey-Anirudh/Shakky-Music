@@ -276,7 +276,7 @@ async def start_webapp_server():
             socket_app, 
             host="0.0.0.0", 
             port=PORT, 
-            log_level="info", 
+            log_level="warning", 
             timeout_keep_alive=60
         )
         server = uvicorn.Server(config_uv)
