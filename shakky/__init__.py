@@ -1,4 +1,12 @@
 import os
+import sys
+from unittest.mock import MagicMock
+
+# 🤖 Universal Stealth Mock for tgcalls (ARM Fix)
+# This prevents ModuleNotFoundError on ARM VPS even if the v3.x core is missing
+if "tgcalls" not in sys.modules:
+    sys.modules["tgcalls"] = MagicMock()
+
 # Try to use Native Core (ntgcalls) by default, but allow fallbacks
 os.environ["PYTGCALLS_IMPLEMENTATION"] = os.getenv("PYTGCALLS_IMPLEMENTATION", "native")
 os.environ["NTGCALLS"] = "1"

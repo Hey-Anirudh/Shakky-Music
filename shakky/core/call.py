@@ -8,25 +8,53 @@ from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
 from pyrogram.types import InlineKeyboardMarkup
+# 🤖 Universal Core Switch (ARM VPS Fix)
+# This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
 try:
+    # --- Modern Era (v1, v2, v3) ---
     from pytgcalls import PyTgCalls, StreamType
-except ImportError:
+    from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+    from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
+    from pytgcalls.types import Update
+    # Event detection
     try:
-        from pytgcalls.pytgcalls import PyTgCalls
-        from pytgcalls.types import StreamType
+        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
+        IS_V3 = True
     except ImportError:
-        # Final fallback for older 3.x versions
-        from pytgcalls.calls import PyTgCalls
-        from pytgcalls.types.stream import StreamType
+        IS_V3 = False
+    IS_LEGACY = False
+except ImportError:
+    # --- Legacy Era (v0) ---
+    try:
+        from pytgcalls import GroupCallFactory
+        from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+        PyTgCalls = GroupCallFactory # Map for compatibility
+        IS_LEGACY = True
+        IS_V3 = False
+        # Legacy dummies
+        class HighQualityAudio: pass
+        class MediumQualityVideo: pass
+    except ImportError:
+        # Fallback for dev-specific paths
+        try:
+            from pytgcalls.pytgcalls import PyTgCalls
+            from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+            IS_V3 = False
+            IS_LEGACY = False
+            # Qualities might still be missing in some dev builds
+            try:
+                from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
+            except ImportError:
+                class HighQualityAudio: pass
+                class MediumQualityVideo: pass
+        except ImportError:
+            raise ImportError("Critical: No compatible PyTgCalls found. Run ./vps_fix.sh")
+
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
     NoActiveGroupCall,
     TelegramServerError,
 )
-from pytgcalls.types import Update
-from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
-from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
 
 # Implementation selection is now handled via PYTGCALLS_IMPLEMENTATION environment variable
 # to maintain compatibility across different dev versions of pytgcalls.
@@ -825,13 +853,37 @@ class Call(PyTgCalls):
         @self.four.on_stream_end()
         @self.five.on_stream_end()
         async def stream_end_handler1(client, update: Update):
-            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
+            update_type = type(update).__name__
+            chat_id = getattr(update, 'chat_id', None)
+            LOGGER.info(f"[on_stream_end] Received update type={update_type} chat={chat_id}")
+
+            if not chat_id:
+                LOGGER.warning(f"[on_stream_end] No chat_id on update {update_type}, ignoring.")
                 return
+
+            # Only act on genuine end-of-stream events
+            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
+                # StreamDeleted also means the stream is gone
+                try:
+                    from pytgcalls.types.stream import StreamDeleted
+                    if isinstance(update, StreamDeleted):
+                        LOGGER.info(f"[on_stream_end] StreamDeleted for {chat_id}, treating as stream end.")
+                    else:
+                        LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
+                        return
+                except ImportError:
+                    LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
+                    return
+
+            LOGGER.info(f"[on_stream_end] Processing stream end for chat {chat_id}")
             try:
-                await self.change_stream(client, update.chat_id)
+                await self.change_stream(client, chat_id)
             except Exception as e:
-                LOGGER.error(f"Stream end handler failed for {update.chat_id}: {e}")
-                await self.stop_stream(update.chat_id)
+                LOGGER.error(f"[on_stream_end] change_stream failed for {chat_id}: {e}")
+                try:
+                    await self.stop_stream(chat_id)
+                except:
+                    pass
 
 
 

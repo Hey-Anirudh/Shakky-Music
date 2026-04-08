@@ -1,8 +1,10 @@
 import asyncio
+import logging
 
 from shakky.misc import db
 from shakky.utils.database import get_active_chats, is_music_playing
 
+LOGGER = logging.getLogger(__name__)
 
 async def timer():
     while not await asyncio.sleep(1):
@@ -21,15 +23,20 @@ async def timer():
             if db[chat_id][0]["played"] >= duration + 4:
                 try:
                     from shakky.core.call import ani
-                    # Force a skip event
-                    import random
-                    client = random.choice([ani.one, ani.two, ani.three, ani.four, ani.five])
-                    asyncio.create_task(ani.change_stream(client, chat_id))
+                    from shakky.utils.database import group_assistant
+                    # Use the correct assistant for this chat
+                    assistant = await group_assistant(ani, chat_id)
+                    # Clear the anti-duplicate cooldown so watchdog skip always works
+                    ani._last_skip.pop(chat_id, None)
+                    LOGGER.info(f"[watchdog] Song hung past duration in {chat_id} (played={db[chat_id][0]['played']}, dur={duration}). Force-skipping.")
+                    asyncio.create_task(ani.change_stream(assistant, chat_id))
                     continue
-                except:
+                except Exception as e:
+                    LOGGER.error(f"[watchdog] Recovery failed for {chat_id}: {e}")
                     continue
                     
             db[chat_id][0]["played"] += 1
 
 
 asyncio.create_task(timer())
+

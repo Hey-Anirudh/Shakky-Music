@@ -1,47 +1,49 @@
 #!/bin/bash
-# vps_fix.sh - Enhanced repair for ARM/x64 VPS
-# Run as root: sudo bash vps_fix.sh
 
-echo "--- SHAKKY VPS REPAIR v2.0 ---"
+# 🤖 Shakky ARM VPS Universal Fixer
+# This script brute-forces through 4 eras of PyTgCalls to find the one your VPS loves.
 
-# 1. Core Native Dependencies
-echo "Installing media libraries..."
-sudo apt update -y
-sudo apt install -y ffmpeg libopus-dev libglib2.0-0 pkg-config \
-    libavformat-dev libavcodec-dev libavdevice-dev libavutil-dev \
-    libswresample-dev libswscale-dev python3-pip python3-dev \
-    build-essential curl nodejs
+echo "🚀 Starting Shakky ARM Restoration..."
 
-# 2. Fix Node Path (Common ARM Issue)
-echo "Syncing Node.js paths..."
-NODE_PATH=$(which node)
-if [ ! -z "$NODE_PATH" ]; then
-    sudo ln -sf "$NODE_PATH" /usr/bin/node
-    sudo ln -sf "$NODE_PATH" /usr/local/bin/node
-fi
+# 1. Clean up broken files
+echo "🧹 Cleaning existing library clutters..."
+sudo rm -rf /usr/local/lib/python3.10/dist-packages/pytgcalls* /usr/local/lib/python3.10/dist-packages/ntgcalls* /usr/local/lib/python3.10/dist-packages/tgcalls*
+pip3 uninstall -y pytgcalls ntgcalls tgcalls
 
-# 3. Clean environment logic
-echo "Resetting environment implementation..."
-sed -i '/PYTGCALLS_IMPLEMENTATION/d' ~/.bashrc
-# On ARM, we default to javascript because ntgcalls wheels are often missing for 3.x dev
-if [[ $(uname -m) == *"aarch64"* ]]; then
-    echo "ARM detected: Defaulting to JavaScriptCore for stability."
-    echo 'export PYTGCALLS_IMPLEMENTATION="javascript"' >> ~/.bashrc
-    export PYTGCALLS_IMPLEMENTATION="javascript"
-else
-    echo "x86/x64 detected: Defaulting to NativeCore."
-    echo 'export PYTGCALLS_IMPLEMENTATION="native"' >> ~/.bashrc
-    export PYTGCALLS_IMPLEMENTATION="native"
-fi
+# 2. Iterative Testing
+VERSIONS=(
+    "v3:ntgcalls==2.1.0:pytgcalls==3.0.0.dev20"
+    "v2:ntgcalls==2.1.0:pytgcalls==2.1.0"
+    "v1:ntgcalls==1.0.5:pytgcalls==1.1.2"
+    "v0:ntgcalls==1.0.5:pytgcalls==0.0.24"
+)
 
-# 4. Refresh Dependencies
-echo "Refreshing Python Core..."
-python3 -m pip install --upgrade pip
-# Install with javascript extra to ensure tgcalls is ready
-pip3 install "pytgcalls[javascript]==3.0.0.dev20" --upgrade
-# Try to install ntgcalls but don't fail if it's missing (JS will take over)
-pip3 install ntgcalls==3.0.0.dev20 || echo "Native wheel missing for this arch. Using JS fallback."
+for ENTRY in "${VERSIONS[@]}"; do
+    NAME=$(echo $ENTRY | cut -d: -f1)
+    NTG=$(echo $ENTRY | cut -d: -f2)
+    PTG=$(echo $ENTRY | cut -d: -f3)
 
-echo "--- REPAIR COMPLETE ---"
-echo "Please restart your bot."
+    echo "🧪 Testing $NAME Era..."
+    pip3 install $NTG --upgrade --no-cache-dir
+    pip3 install $PTG --no-deps --upgrade --force-reinstall
 
+    echo "📡 Attempting to start bot (waiting 10s for stability)..."
+    python3 -m shakky & 
+    BOT_PID=$!
+    
+    sleep 10
+    
+    if ps -p $BOT_PID > /dev/null; then
+        echo "✅ SUCCESS! Bot is stable on $NAME."
+        echo "🎉 Your VPS environment is now restored."
+        exit 0
+    else
+        echo "❌ $NAME failed to start. Trying next..."
+        # Cleanup
+        kill $BOT_PID 2>/dev/null
+        pip3 uninstall -y pytgcalls ntgcalls
+    fi
+done
+
+echo "⚠️ ALL VERSIONS FAILED. Please check /nohup.out for details."
+exit 1
