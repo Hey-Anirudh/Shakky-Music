@@ -502,8 +502,10 @@ class Call(PyTgCalls):
                     last_err = e2
                     LOGGER.warning(f"[join_call] pulse_stream failed after refresh on attempt {attempt+1}: {e2}")
             except Exception as e:
+                import traceback
+                err_full = traceback.format_exc()
                 last_err = e
-                LOGGER.error(f"[join_call] Attempt {attempt+1} unexpected: {e}")
+                LOGGER.error(f"[join_call] Attempt {attempt+1} unexpected error: {e}\n{err_full}")
             
             if not joined and attempt < 2:
                 await asyncio.sleep(2)
