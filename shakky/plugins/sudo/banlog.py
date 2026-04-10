@@ -4,8 +4,7 @@ from pyrogram import filters
 from pyrogram.enums import ChatEventAction
 from pyrogram.types import ChatEventFilter, Message
 
-from shakky import app
-from shakky.core.userbot import userbot
+from shakky import app, userbot
 from shakky.misc import SUDOERS
 from config import OWNER_ID
 
