@@ -4,7 +4,7 @@ from pyrogram import filters
 from pyrogram.enums import ChatEventAction
 from pyrogram.types import ChatEventFilter, Message
 
-from shakky import app, userbot
+from shakky import app
 from shakky.misc import SUDOERS
 from config import OWNER_ID
 
@@ -38,13 +38,9 @@ async def ban_log(client, message: Message):
     mystic = await message.reply_text("🔍 **Fetching recent ban actions...**")
 
     try:
-        # Use the userbot assistant to access admin event log
-        # (bots cannot call get_chat_event_log — it's a user-only MTProto method)
-        assistant = userbot.one
-
         # Get chat info for the header
         try:
-            chat_info = await assistant.get_chat(target_chat_id)
+            chat_info = await app.get_chat(target_chat_id)
             chat_title = chat_info.title or "Unknown"
         except Exception:
             chat_title = str(target_chat_id)
@@ -53,7 +49,7 @@ async def ban_log(client, message: Message):
         event_filter = ChatEventFilter(new_restrictions=True)
         ban_events = []
 
-        async for event in assistant.get_chat_event_log(
+        async for event in app.get_chat_event_log(
             target_chat_id, filters=event_filter, limit=limit
         ):
             # Only keep actual ban/kick actions
@@ -154,13 +150,13 @@ async def ban_log(client, message: Message):
         error_msg = str(e)
         if "CHAT_ADMIN_REQUIRED" in error_msg:
             await mystic.edit_text(
-                "**❌ The assistant account is not an admin** in that group.\n"
-                "Make sure the userbot assistant has admin rights to access the event log."
+                "**❌ Bot is not an admin** in that group.\n"
+                "Make sure the bot has admin rights to access the event log."
             )
         elif "CHANNEL_INVALID" in error_msg or "CHANNEL_PRIVATE" in error_msg:
             await mystic.edit_text(
                 "**❌ Invalid or inaccessible group.** "
-                "Make sure the assistant is a member with admin rights."
+                "Make sure the bot is a member with admin rights."
             )
         else:
             await mystic.edit_text(f"**❌ Error:** `{error_msg}`")
