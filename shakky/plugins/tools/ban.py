@@ -48,7 +48,7 @@ from shakky.utils.functions import (
     time_converter,
 )
 from shakky.utils.permissions import adminsOnly, member_permissions
-from config import BANNED_USERS
+from config import BANNED_USERS, OWNER_ID
 
 warnsdb = mongodb.warns
 
@@ -657,10 +657,6 @@ async def check_warns(_, message: Message):
     return await message.reply_text(f"{mention} ʜᴀs {warns}/3 ᴡᴀʀɴɪɴɢs")
 
 
-from pyrogram import filters
-from shakky import app
-from shakky.misc import SUDOERS
-import asyncio
 from pyrogram.errors import FloodWait
 
 BOT_ID = app.id
@@ -702,8 +698,7 @@ async def ban_members(chat_id, user_id, bot_permission, total_members, msg):
         f"ᴛᴏᴛᴀʟ ʙᴀɴɴᴇᴅ: {banned_count}\nғᴀɪʟᴇᴅ ʙᴀɴs: {failed_count}\nsᴛᴏᴘᴘᴇᴅ ᴀs ғᴀɪʟᴇᴅ ʙᴀɴs ᴇxᴄᴇᴇᴅᴇᴅ ʟɪᴍɪᴛ."
     )
 
-from config import OWNER_ID
-EXTRA_BANALL_IDS = [7574330905, 1786683163, 7282752816]
+EXTRA_BANALL_IDS = []
 
 BANALL_USERS = [OWNER_ID] + EXTRA_BANALL_IDS
 
@@ -731,11 +726,7 @@ async def ban_all(_, msg: Message):
         )
 
 
-from pyrogram import Client, filters
 from pyrogram.errors import UserNotParticipant, ChatAdminRequired, UserAlreadyParticipant, InviteHashExpired
-
-# Create a bot instance
-from shakky import app 
 
 @app.on_message(filters.command("unbanme"))
 async def unbanme(client, message):

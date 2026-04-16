@@ -112,6 +112,7 @@ PRIVACY_LINK = getenv("PRIVACY_LINK", "")
 
 # ─── DYNAMIC FILTERS ────────────────────────────────────────
 BANNED_USERS = filters.user()
+GMUTED_USERS = filters.user()
 adminlist    = {}
 lyrical      = {}
 votemode     = {}

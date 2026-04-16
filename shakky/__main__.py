@@ -13,8 +13,8 @@ logger = logging.getLogger("shakky")
 from shakky.core.call import Nand
 from shakky.misc import sudo
 from shakky.plugins import ALL_MODULES
-from shakky.utils.database import get_banned_users, get_gbanned
-from config import BANNED_USERS
+from shakky.utils.database import get_banned_users, get_gbanned, get_gmuted_users
+from config import BANNED_USERS, GMUTED_USERS
 
 
 async def shutdown(sig, loop):
@@ -49,6 +49,9 @@ async def init():
         users = await get_banned_users()
         for user_id in users:
             BANNED_USERS.add(user_id)
+        users = await get_gmuted_users()
+        for user_id in users:
+            GMUTED_USERS.add(user_id)
     except:
         pass
 

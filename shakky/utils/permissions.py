@@ -2,6 +2,7 @@ import logging
 from functools import wraps
 from traceback import format_exc as err
 from pyrogram.errors.exceptions.forbidden_403 import ChatWriteForbidden
+from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.types import Message
 from shakky import app
 from shakky.misc import SUDOERS
@@ -10,6 +11,18 @@ async def member_permissions(chat_id: int, user_id: int):
     perms = []
     try:
         member = await app.get_chat_member(chat_id, user_id)
+        if member.status == ChatMemberStatus.OWNER:
+            return [
+                "can_post_messages",
+                "can_edit_messages",
+                "can_delete_messages",
+                "can_restrict_members",
+                "can_promote_members",
+                "can_change_info",
+                "can_invite_users",
+                "can_pin_messages",
+                "can_manage_video_chats",
+            ]
         if not member.privileges:
             return []
         p = member.privileges
@@ -77,7 +90,7 @@ def adminsOnly(permission):
         @wraps(func)
         async def subFunc2(client, message: Message, *args, **kwargs):
             chatID = message.chat.id
-            if not message.chat.type in ["group", "supergroup"]:
+            if not message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
                 return await func(client, message, *args, **kwargs)
                 
             bot_perms = await bot_permissions(chatID)

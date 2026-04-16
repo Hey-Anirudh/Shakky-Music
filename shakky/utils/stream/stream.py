@@ -213,6 +213,11 @@ async def stream(
         elif streamtype == "telegram":
             audio = result.audio or result.voice
             video = result.video
+            if not audio and not video and result.document:
+                if result.document.mime_type.startswith("video"):
+                    video = result.document
+                else:
+                    audio = result.document
             status = True if video else None
             
             file_name = await Telegram.get_filepath(audio=audio, video=video)

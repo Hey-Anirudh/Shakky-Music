@@ -67,6 +67,7 @@ class TeleAPI:
         audio: Union[bool, str] = None,
         video: Union[bool, str] = None,
     ):
+        file_name = None
         if audio:
             try:
                 file_name = (
@@ -81,7 +82,7 @@ class TeleAPI:
             except:
                 file_name = audio.file_unique_id + "." + "ogg"
             file_name = os.path.join(os.path.realpath("downloads"), file_name)
-        if video:
+        elif video:
             try:
                 file_name = (
                     video.file_unique_id + "." + (video.file_name.split(".")[-1])
@@ -126,12 +127,12 @@ class TeleAPI:
                 total_size = convert_bytes(total)
                 completed_size = convert_bytes(current)
                 speed = convert_bytes(speed)
-                percentage = int((percentage.split("."))[0])
+                p_int = int((percentage.split("."))[0])
                 for counter in range(7):
                     low = int(lower[counter])
                     high = int(higher[counter])
                     check = int(checker[counter])
-                    if low < percentage <= high:
+                    if low < p_int <= high:
                         if high == check:
                             try:
                                 await mystic.edit_text(
@@ -139,7 +140,7 @@ class TeleAPI:
                                         app.mention,
                                         total_size,
                                         completed_size,
-                                        percentage[:5],
+                                        percentage,
                                         speed,
                                         eta,
                                     ),
@@ -152,7 +153,7 @@ class TeleAPI:
             speed_counter[message.id] = time.time()
             try:
                 await app.download_media(
-                    message.reply_to_message,
+                    message,
                     file_name=fname,
                     progress=progress,
                 )

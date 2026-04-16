@@ -155,7 +155,10 @@ class Call(PyTgCalls):
 
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
-        await assistant.pause_stream(chat_id)
+        try:
+            await assistant.pause_stream(chat_id)
+        except Exception as e:
+            LOGGER.warning(f"PyTgCalls pause_stream failed (non-critical): {e}")
         try:
             current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
             queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
@@ -164,7 +167,10 @@ class Call(PyTgCalls):
 
     async def resume_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
-        await assistant.resume_stream(chat_id)
+        try:
+            await assistant.resume_stream(chat_id)
+        except Exception as e:
+            LOGGER.warning(f"PyTgCalls resume_stream failed (non-critical): {e}")
         try:
             current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
             queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
@@ -268,7 +274,10 @@ class Call(PyTgCalls):
             )
         )
         if str(db[chat_id][0]["file"]) == str(file_path):
-            await assistant.change_stream(chat_id, stream)
+            try:
+                await assistant.change_stream(chat_id, stream)
+            except Exception as e:
+                LOGGER.error(f"speedup_stream failed: {e}")
         else:
             raise AssistantErr("➲ **Cannot change speed, file mismatch.**")
         if str(db[chat_id][0]["file"]) == str(file_path):
@@ -312,10 +321,16 @@ class Call(PyTgCalls):
             )
         else:
             stream = AudioPiped(link, audio_parameters=HighQualityAudio())
-        await assistant.change_stream(
-            chat_id,
-            stream,
-        )
+        try:
+            await assistant.change_stream(chat_id, stream)
+            # Ensure ntgcalls pipeline restart safely
+            try:
+                await asyncio.sleep(0.5)
+                await assistant.resume_stream(chat_id)
+            except:
+                pass
+        except Exception as e:
+            LOGGER.error(f"skip_stream failed: {e}")
 
     async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
         assistant = await group_assistant(self, chat_id)
@@ -343,7 +358,15 @@ class Call(PyTgCalls):
                 additional_ffmpeg_parameters=f"-ss {to_seek_seconds} -to {duration}",
             )
         )
-        await assistant.change_stream(chat_id, stream)
+        try:
+            await assistant.change_stream(chat_id, stream)
+            try:
+                await asyncio.sleep(0.5)
+                await assistant.resume_stream(chat_id)
+            except:
+                pass
+        except Exception as e:
+            LOGGER.error(f"seek_stream failed: {e}")
 
     async def stream_call(self, link):
         assistant = await group_assistant(self, config.LOG_GROUP_ID)
@@ -695,7 +718,8 @@ class Call(PyTgCalls):
                     # Pop failed track
                     db[chat_id].pop(0)
                     if len(db[chat_id]) > 0:
-                        return await self.change_stream(client, chat_id, skip_pop=True)
+                        asyncio.create_task(self.change_stream(client, chat_id, skip_pop=True))
+                        return
                 
                 await _clear_(chat_id)
                 try: return await client.leave_group_call(chat_id)
@@ -879,7 +903,8 @@ class Call(PyTgCalls):
 
             LOGGER.info(f"[on_stream_end] Processing stream end for chat {chat_id}")
             try:
-                await self.change_stream(client, chat_id)
+                # Disconnect execution from the event loop using create_task
+                asyncio.create_task(self.change_stream(client, chat_id))
             except Exception as e:
                 LOGGER.error(f"[on_stream_end] change_stream failed for {chat_id}: {e}")
                 try:

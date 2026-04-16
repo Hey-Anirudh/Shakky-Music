@@ -24,6 +24,7 @@ usersdb = mongodb.tgusersdb
 filtersdb = mongodb.filters
 notesdb = mongodb.notes
 statsdb = mongodb.stats
+gmuteddb = mongodb.gmuted
 
 
 active = []
@@ -41,6 +42,7 @@ playmode = {}
 playtype = {}
 skipmode = {}
 mute = {}
+gmuted = []
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
@@ -756,6 +758,35 @@ async def remove_banned_user(user_id: int):
     if not is_gbanned:
         return
     return await blockeddb.delete_one({"user_id": user_id})
+
+
+async def get_gmuted_users() -> list:
+    results = []
+    async for user in gmuteddb.find({"user_id": {"$gt": 0}}):
+        user_id = user["user_id"]
+        results.append(user_id)
+    return results
+
+
+async def is_gmuted_user(user_id: int) -> bool:
+    user = await gmuteddb.find_one({"user_id": user_id})
+    if not user:
+        return False
+    return True
+
+
+async def add_gmuted_user(user_id: int):
+    is_gmuted = await is_gmuted_user(user_id)
+    if is_gmuted:
+        return
+    return await gmuteddb.insert_one({"user_id": user_id})
+
+
+async def remove_gmuted_user(user_id: int):
+    is_gmuted = await is_gmuted_user(user_id)
+    if not is_gmuted:
+        return
+    return await gmuteddb.delete_one({"user_id": user_id})
 
 
 async def get_filters_count() -> dict:
