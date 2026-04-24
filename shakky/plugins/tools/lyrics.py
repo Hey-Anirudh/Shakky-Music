@@ -55,11 +55,12 @@ async def lyrics_command(client, message: Message):
                     else:
                         display.append(f"   {text}")
                 
+                lyrics_text = "\n".join(display)
                 text_to_send = (
                     f"✨ **𝓢𝔂𝓷𝓬𝓮𝓭 𝓛𝔂𝓻𝓲𝓬𝓼** ✨\n"
                     f"🎧 `{title[:30]}`\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{'\n'.join(display)}\n\n"
+                    f"{lyrics_text}\n\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
                     f"➲ *Powered by Shakky Music*"
                 )
