@@ -4,7 +4,8 @@ import asyncio
 import time
 from shakky import app
 from shakky.misc import db
-from shakky.utils.lyrics import fetch_lrc
+from shakky.utils.lyrics import fetch_lrc, parse_lrc
+from shakky.utils.groq import get_synced_lyrics_from_groq
 from config import BANNED_USERS
 
 @app.on_message(filters.command(["lyrics", "lrc"]) & filters.group & ~BANNED_USERS)
@@ -23,6 +24,12 @@ async def lyrics_command(client, message: Message):
     status_msg = await message.reply_text(f"➲ **Searching lyrics for:** `{title}`...")
     
     lyrics = await fetch_lrc(title)
+    if not lyrics:
+        await status_msg.edit(f"➲ **Synced lyrics not found. Fetching via Groq AI...**")
+        lrc_text = await get_synced_lyrics_from_groq(title)
+        if lrc_text:
+            lyrics = parse_lrc(lrc_text)
+            
     if not lyrics:
         return await status_msg.edit(f"➲ **No synchronized lyrics found for:** `{title}`")
     

@@ -121,3 +121,44 @@ async def get_song_recommendation(last_song_title: str):
     except Exception as e:
         print(f"Groq API error in get_song_recommendation: {e}")
         return None
+
+async def get_synced_lyrics_from_groq(title: str):
+    """
+    Get synchronized lyrics in LRC format from Groq.
+    """
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = f"""
+    Provide the full synchronized lyrics (LRC format) for the song "{title}".
+    Use the format [mm:ss.xx] Lyrics Text.
+    Ensure the timing is as accurate as possible for the entire song.
+    Respond ONLY with the LRC content. No intro, no outro, no markdown code blocks.
+    """
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a professional music librarian specializing in LRC files."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.1,
+        "max_tokens": 2048
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(GROQ_URL, headers=headers, data=json.dumps(payload)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    lrc_content = data["choices"][0]["message"]["content"].strip()
+                    # Remove any potential markdown code block markers
+                    lrc_content = lrc_content.replace("```lrc", "").replace("```", "").strip()
+                    return lrc_content
+                else:
+                    return None
+        except Exception as e:
+            print(f"Groq Lyrics API Error: {e}")
+            return None
