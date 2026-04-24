@@ -25,6 +25,7 @@ filtersdb = mongodb.filters
 notesdb = mongodb.notes
 statsdb = mongodb.stats
 gmuteddb = mongodb.gmuted
+cohostdb = mongodb.cohost
 
 
 active = []
@@ -43,6 +44,7 @@ playtype = {}
 skipmode = {}
 mute = {}
 gmuted = []
+cohost = {}
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
@@ -801,6 +803,28 @@ async def get_filters_count() -> dict:
         "filters_count": filters_count,
     }
 
+async def is_cohost(chat_id: int) -> bool:
+    mode = cohost.get(chat_id)
+    if mode is None:
+        user = await cohostdb.find_one({"chat_id": chat_id})
+        if not user:
+            cohost[chat_id] = False
+            return False
+        cohost[chat_id] = True
+        return True
+    return mode
+
+async def cohost_on(chat_id: int):
+    cohost[chat_id] = True
+    user = await cohostdb.find_one({"chat_id": chat_id})
+    if not user:
+        return await cohostdb.insert_one({"chat_id": chat_id})
+
+async def cohost_off(chat_id: int):
+    cohost[chat_id] = False
+    user = await cohostdb.find_one({"chat_id": chat_id})
+    if user:
+        return await cohostdb.delete_one({"chat_id": chat_id})
 
 async def _get_filters(chat_id: int) -> Dict[str, int]:
     _filters = await filtersdb.find_one({"chat_id": chat_id})

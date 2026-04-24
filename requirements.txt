@@ -26,3 +26,5 @@ gitpython
 pydub
 spotipy
 pickledb
+edge-tts
+httpx

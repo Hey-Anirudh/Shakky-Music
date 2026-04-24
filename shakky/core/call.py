@@ -608,6 +608,35 @@ class Call(PyTgCalls):
             streamtype = check[0]["streamtype"]
             videoid = check[0]["vidid"]
             
+            is_intro = False
+            # --- AI CO-HOST LOGIC ---
+            from shakky.utils.database import is_cohost
+            if await is_cohost(chat_id) and not check[0].get("cohost_played") and "live_" not in queued:
+                from shakky.utils.cohost import generate_cohost_script, text_to_speech
+                check[0]["cohost_played"] = True
+                try:
+                    script = await generate_cohost_script(title, user)
+                    intro_file = await text_to_speech(script, chat_id)
+                    if intro_file and os.path.exists(intro_file):
+                        queued = intro_file
+                        streamtype = "audio"
+                        is_intro = True
+                        LOGGER.info(f"Playing AI Co-Host intro for {chat_id}: {script}")
+                except Exception as e:
+                    LOGGER.error(f"Co-Host activation failed: {e}")
+
+            if is_intro:
+                if video:
+                    stream = AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
+                else:
+                    stream = AudioPiped(queued, HighQualityAudio())
+                try:
+                    await client.change_stream(chat_id, stream)
+                    return
+                except Exception as e:
+                    LOGGER.error(f"Intro stream failed: {e}")
+                    # If intro fails, continue to play the real song
+            
             db[chat_id][0]["played"] = 0
             exis = (check[0]).get("old_dur")
             if exis:
