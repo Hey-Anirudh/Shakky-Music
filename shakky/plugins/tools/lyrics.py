@@ -57,13 +57,13 @@ async def lyrics_command(client, message: Message):
                 
                 lyrics_text = "\n".join(display)
                 text_to_send = (
-                    f"✨ **𝓢𝔂𝓷𝓬𝓮𝓭 𝓛𝔂𝓻𝓲𝓬𝓼** ✨\n"
-                    f"🎧 `{title[:30]}`\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"{lyrics_text}\n\n"
-                    f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"➲ *Powered by Shakky Music*"
-                )
+                    "✨ **𝓢𝔂𝓷𝓬𝓮𝓭 𝓛𝔂𝓻𝓲𝓬𝓼** ✨\n"
+                    "🎧 `{}`\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n\n"
+                    "{}\n\n"
+                    "━━━━━━━━━━━━━━━━━━━━\n"
+                    "➲ *Powered by Shakky Music*"
+                ).format(title[:30], lyrics_text)
                 try:
                     await status_msg.edit(text_to_send)
                 except:
