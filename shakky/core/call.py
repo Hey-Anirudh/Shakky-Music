@@ -496,47 +496,50 @@ class Call(PyTgCalls):
 
         await refresh_vc_state()
 
-        # --- Joining Logic with Robust Retries ---
+        # --- Joining Logic ---
         joined = False
         last_err = None
-        for attempt in range(3):
+        
+        try:
+            await assistant.join_group_call(chat_id, stream)
+            joined = True
+        except AlreadyJoinedError:
+            joined = True
+        except NoActiveGroupCall as e:
+            last_err = e
+            LOGGER.warning(f"[join_call] NoActiveGroupCall. Refreshing...")
+            await refresh_vc_state()
+            await asyncio.sleep(1)
             try:
-                await assistant.join_group_call(chat_id, stream)
+                await assistant.join_group_call(
+                    chat_id, stream, stream_type=StreamType().pulse_stream
+                )
                 joined = True
-                break
             except AlreadyJoinedError:
                 joined = True
-                break
-            except NoActiveGroupCall as e:
-                last_err = e
-                LOGGER.warning(f"[join_call] Attempt {attempt+1}: NoActiveGroupCall. Refreshing...")
-                await refresh_vc_state()
-                await asyncio.sleep(2)
-                try:
-                    await assistant.join_group_call(
-                        chat_id, stream, stream_type=StreamType().pulse_stream
-                    )
-                    joined = True
-                    break
-                except AlreadyJoinedError:
-                    joined = True
-                    break
-                except Exception as e2:
-                    last_err = e2
-                    LOGGER.warning(f"[join_call] pulse_stream failed after refresh on attempt {attempt+1}: {e2}")
-            except Exception as e:
-                import traceback
-                err_full = traceback.format_exc()
-                last_err = e
-                LOGGER.error(f"[join_call] Attempt {attempt+1} unexpected error: {e}\n{err_full}")
-            
-            if not joined and attempt < 2:
-                await asyncio.sleep(2)
+            except Exception as e2:
+                last_err = e2
+                LOGGER.warning(f"[join_call] pulse_stream failed after refresh: {e2}")
+        except Exception as e:
+            import traceback
+            err_full = traceback.format_exc()
+            last_err = e
+            LOGGER.error(f"[join_call] Unexpected error: {e}\n{err_full}")
 
         if not joined:
-            LOGGER.error(f"[join_call] All 3 attempts failed completely. Last error: {last_err}")
-            raise AssistantErr("➲ **Failed to join the Voice Chat. Ensure it's active or use /reboot ᴛᴏ ʀᴇғʀᴇsʜ.**")
-
+            LOGGER.error(f"[join_call] Failed to join VC. Last error: {last_err}")
+            try:
+                from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                webapp_url = f"{config.WEBAPP_URL}?room={chat_id}"
+                btn = InlineKeyboardMarkup([[InlineKeyboardButton("🎧 Open Web Player", url=webapp_url)]])
+                await app.send_message(
+                    original_chat_id, 
+                    text="⚠️ **Voice Chat is not turned on!**\n\n➲ **I will continue playing the track in the WebApp.**\n➲ **Click the button below to listen live.**",
+                    reply_markup=btn
+                )
+            except Exception as e:
+                LOGGER.error(f"Failed to send VC off warning: {e}")
+            # Continue without raising AssistantErr to allow WebApp playback
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -733,26 +736,31 @@ class Call(PyTgCalls):
                 err_msg = str(e)
                 err_full = traceback.format_exc()
                 LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}")
-                # Log the FULL error for permanent fix diagnosis
-                with open("last_error.txt", "w", encoding="utf-8") as f:
-                    from datetime import datetime
-                    f.write(f"Timestamp: {datetime.now()}\nChat ID: {chat_id}\nTitle: {title}\nError: {err_msg}\n\nTraceback:\n{err_full}")
                 
-                try:
-                    await app.send_message(original_chat_id, text=f"⚠️ **Streaming Error:** `{title}`\n**Reason:** `{err_msg[:100]}`\n➲ **Skipping to next track...**")
-                except:
-                    pass
-                
-                if len(db[chat_id]) > 0:
-                    # Pop failed track
-                    db[chat_id].pop(0)
+                if "NoActiveGroupCall" in err_msg or "NotInCall" in err_msg or "Call" in err_msg:
+                    LOGGER.warning(f"Ignoring change_stream error for WebApp playback: {err_msg}")
+                    # Allow execution to continue for WebApp notifications, don't skip track.
+                else:
+                    # Log the FULL error for permanent fix diagnosis
+                    with open("last_error.txt", "w", encoding="utf-8") as f:
+                        from datetime import datetime
+                        f.write(f"Timestamp: {datetime.now()}\nChat ID: {chat_id}\nTitle: {title}\nError: {err_msg}\n\nTraceback:\n{err_full}")
+                    
+                    try:
+                        await app.send_message(original_chat_id, text=f"⚠️ **Streaming Error:** `{title}`\n**Reason:** `{err_msg[:100]}`\n➲ **Skipping to next track...**")
+                    except:
+                        pass
+                    
                     if len(db[chat_id]) > 0:
-                        asyncio.create_task(self.change_stream(client, chat_id, skip_pop=True))
-                        return
-                
-                await _clear_(chat_id)
-                try: return await client.leave_group_call(chat_id)
-                except: return
+                        # Pop failed track
+                        db[chat_id].pop(0)
+                        if len(db[chat_id]) > 0:
+                            asyncio.create_task(self.change_stream(client, chat_id, skip_pop=True))
+                            return
+                    
+                    await _clear_(chat_id)
+                    try: return await client.leave_group_call(chat_id)
+                    except: return
 
             # --- Fire-and-forget WebApp notification (non-blocking) ---
             asyncio.create_task(self._notify_webapp_safe(chat_id))
