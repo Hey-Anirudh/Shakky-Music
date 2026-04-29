@@ -737,7 +737,9 @@ class Call(PyTgCalls):
                 err_full = traceback.format_exc()
                 LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}")
                 
-                if "NoActiveGroupCall" in err_msg or "NotInCall" in err_msg or "Call" in err_msg:
+                err_msg_lower = err_msg.lower()
+                # Whitelist common VC-is-off errors to allow WebApp playback to continue
+                if any(x in err_msg_lower for x in ["noactivegroupcall", "notincall", "call", "group call", "isn't in a"]):
                     LOGGER.warning(f"Ignoring change_stream error for WebApp playback: {err_msg}")
                     # Allow execution to continue for WebApp notifications, don't skip track.
                 else:
