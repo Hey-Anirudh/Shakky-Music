@@ -64,12 +64,9 @@ async def global_ban(client, message: Message, _):
     chats = await get_served_chats()
     for chat in chats:
         served_chats.append(int(chat["chat_id"]))
-    time_expected = get_readable_time(len(served_chats))
     mystic = await message.reply_text(_["gban_5"].format(user.mention, time_expected))
-    served_chats = await get_served_chats()
     number_of_chats = 0
-    for chat in served_chats:
-        chat_id = int(chat["chat_id"])
+    for chat_id in served_chats:
         try:
             await app.ban_chat_member(chat_id, user.id)
             number_of_chats += 1
