@@ -15,5 +15,6 @@ async def gmute_watcher_func(client, message: Message):
     
     try:
         await message.delete()
+        await message.stop_propagation()
     except:
         pass

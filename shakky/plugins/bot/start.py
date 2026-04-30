@@ -25,7 +25,7 @@ from shakky.utils.decorators.language import LanguageStart
 from shakky.utils.formatters import get_readable_time
 from shakky.utils.inline.start import private_panel, start_panel
 from shakky.utils.inline.help import first_page
-from config import BANNED_USERS, AYUV, START_IMG_URL
+from config import BANNED_USERS, GMUTED_USERS, AYUV, START_IMG_URL
 from strings import get_string
 
 ANNIE_VID = [
@@ -40,7 +40,7 @@ async def delete_sticker_after_delay(message, delay):
     await asyncio.sleep(delay)
     await message.delete()
 
-@app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS)
+@app.on_message(filters.command(["start"]) & filters.private & ~BANNED_USERS & ~GMUTED_USERS)
 @LanguageStart
 async def start_pm(client, message: Message, _):
     await add_served_user(message.from_user.id)
@@ -117,7 +117,7 @@ async def start_pm(client, message: Message, _):
             except:
                 pass
 
-@app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS)
+@app.on_message(filters.command(["start"]) & filters.group & ~BANNED_USERS & ~GMUTED_USERS)
 @LanguageStart
 async def start_gp(client, message: Message, _):
     out = start_panel(_)
