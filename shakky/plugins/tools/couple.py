@@ -66,17 +66,26 @@ async def ctest(_, message):
                 if not i.user.is_bot and not i.user.is_deleted:
                     list_of_users.append(i.user.id)
 
-            if 8730115125 in list_of_users and 5598691892 in list_of_users:
-                c1_id = 8730115125
-                c2_id = 5598691892
+            SPECIAL_IDS = [8730115125, 5598691892]
+            is_both_present = all(uid in list_of_users for uid in SPECIAL_IDS)
+
+            if not is_both_present:
+                list_of_users = [uid for uid in list_of_users if uid not in SPECIAL_IDS]
+
+            if len(list_of_users) < 2:
+                return await message.reply_text("Nᴏᴛ ᴇɴᴏᴜɢʜ ᴜsᴇʀs ᴛᴏ ᴄʜᴏᴏsᴇ ᴀ ᴄᴏᴜᴘʟᴇ.")
+
+            c1_id = random.choice(list_of_users)
+            if c1_id in SPECIAL_IDS:
+                c1_id, c2_id = SPECIAL_IDS
             else:
-                list_of_users = [i for i in list_of_users if i not in [8730115125, 5598691892]]
-                if len(list_of_users) < 2:
-                    return await message.reply_text("Nᴏᴛ ᴇɴᴏᴜɢʜ ᴜsᴇʀs ᴛᴏ ᴄʜᴏᴏsᴇ ᴀ ᴄᴏᴜᴘʟᴇ.")
-                c1_id = random.choice(list_of_users)
-                c2_id = random.choice(list_of_users)
-                while c1_id == c2_id:
-                    c1_id = random.choice(list_of_users)
+                others = [uid for uid in list_of_users if uid not in SPECIAL_IDS]
+                if len(others) < 2:
+                    c1_id, c2_id = SPECIAL_IDS
+                else:
+                    c2_id = random.choice(others)
+                    while c1_id == c2_id:
+                        c2_id = random.choice(others)
 
             photo1 = (await app.get_chat(c1_id)).photo
             photo2 = (await app.get_chat(c2_id)).photo
