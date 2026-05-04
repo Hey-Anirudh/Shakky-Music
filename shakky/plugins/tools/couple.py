@@ -66,10 +66,17 @@ async def ctest(_, message):
                 if not i.user.is_bot and not i.user.is_deleted:
                     list_of_users.append(i.user.id)
 
-            c1_id = random.choice(list_of_users)
-            c2_id = random.choice(list_of_users)
-            while c1_id == c2_id:
+            if 8730115125 in list_of_users and 5598691892 in list_of_users:
+                c1_id = 8730115125
+                c2_id = 5598691892
+            else:
+                list_of_users = [i for i in list_of_users if i not in [8730115125, 5598691892]]
+                if len(list_of_users) < 2:
+                    return await message.reply_text("Nᴏᴛ ᴇɴᴏᴜɢʜ ᴜsᴇʀs ᴛᴏ ᴄʜᴏᴏsᴇ ᴀ ᴄᴏᴜᴘʟᴇ.")
                 c1_id = random.choice(list_of_users)
+                c2_id = random.choice(list_of_users)
+                while c1_id == c2_id:
+                    c1_id = random.choice(list_of_users)
 
             photo1 = (await app.get_chat(c1_id)).photo
             photo2 = (await app.get_chat(c2_id)).photo
