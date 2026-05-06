@@ -215,9 +215,14 @@ class Call:
         return self._locks[chat_id]
 
     # --- 🛠️ Remade Stream Builder (Extreme VPS Compatibility Edition) ---
-    def build_stream(self, path, video, payload=None, duration=0):
+    def build_stream(self, path, video, payload=None, duration=0, chat_id=None):
         """Constructs the stream path or object. For Legacy + Effects, returns a Pipe command."""
-        merged_payload = {**self._active_effects.get(payload.get("chat_id"), {}), **(payload or {})} if payload and payload.get("chat_id") else (payload or {})
+        # Merge global effects if any
+        if chat_id and chat_id in self._active_effects:
+             merged_payload = {**self._active_effects[chat_id], **(payload or {})}
+        else:
+             merged_payload = payload or {}
+
         filters = VoiceFilter.build_ffmpeg_args(merged_payload, duration)
         
         # Seek logic
@@ -226,7 +231,6 @@ class Call:
         
         if IS_LEGACY and (filters or ss != 0):
             # 🚀 REMAKE: For Legacy, we use FFmpeg to pre-process the stream and pipe it.
-            # We use s16le/48k/2ch which is standard for Telegram VC.
             seek_arg = f"-ss {ss}"
             if to: seek_arg += f" -to {to}"
             
@@ -250,8 +254,7 @@ class Call:
         userbot = self.userbot1 if assistant == self.one else (self.userbot2 if assistant == self.two else (self.userbot3 if assistant == self.three else (self.userbot4 if assistant == self.four else self.userbot5)))
         
         # Build stream
-        if payload: payload["chat_id"] = chat_id
-        stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0)
+        stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0, chat_id=chat_id)
 
         # Step 1: Membership Check (Passive - No more false KICKED errors)
         try:
@@ -310,7 +313,7 @@ class Call:
         
         # 3. Build new stream with seek and filter
         payload = {"ss": current_pos}
-        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0))
+        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0), chat_id=chat_id)
         
         # 4. Apply to assistant
         ass = await group_assistant(self, chat_id)
@@ -376,7 +379,7 @@ class Call:
             # Build stream with effects
             # We assume current song might need fade-in if it's the start of a session or Pro-DJ
             payload = {"is_prodj": True} if chat_id in self._active_effects else {}
-            stream = self.build_stream(queued, video, payload, track.get("seconds", 0))
+            stream = self.build_stream(queued, video, payload, track.get("seconds", 0), chat_id=chat_id)
             
             try:
                 track["start_time"] = time.time()
