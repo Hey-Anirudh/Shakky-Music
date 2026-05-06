@@ -8,8 +8,6 @@ from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-# 🤖 Universal Core Switch (ARM VPS Fix)
-# This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
 IS_V3 = False
 IS_LEGACY = False
 
@@ -28,28 +26,29 @@ try:
         class StreamVideoEnded: pass
         class StreamDeleted: pass
 except ImportError:
-    # --- Legacy Era (v0) ---
+    # --- Legacy Era (v0.9.x) ---
+    IS_LEGACY = True
     try:
-        from pytgcalls import GroupCallFactory
-        from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-        PyTgCalls = GroupCallFactory # Map for compatibility
-        IS_LEGACY = True
-        class StreamType:
-            pulse_stream = "pulse"
-            pulse = "pulse"
-        class HighQualityAudio: pass
-        class MediumQualityVideo: pass
-        class Update: pass
-        class StreamAudioEnded: pass
-        class StreamVideoEnded: pass
-        class StreamDeleted: pass
+        from pytgcalls import PyTgCalls
     except ImportError:
-        # Fallback for dev-specific paths
         try:
-            from pytgcalls.pytgcalls import PyTgCalls
-            from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+            from pytgcalls import GroupCallFactory as PyTgCalls
         except ImportError:
-            raise ImportError("Critical: No compatible PyTgCalls found. Run ./vps_fix.sh")
+            LOGGER.critical("No PyTgCalls found. Please install it.")
+            raise
+    # Legacy dummies/shims
+    class AudioPiped: 
+        def __init__(self, p, **kwargs): self.path = p
+    class AudioVideoPiped(AudioPiped): pass
+    class HighQualityAudio: pass
+    class MediumQualityVideo: pass
+    class Update: pass
+    class StreamAudioEnded: pass
+    class StreamVideoEnded: pass
+    class StreamDeleted: pass
+    class StreamType:
+        pulse_stream = "pulse"
+        pulse = "pulse"
 
 # Ensure all types are at least defined to prevent NameError
 if "StreamAudioEnded" not in globals():
@@ -591,15 +590,32 @@ class Call(PyTgCalls):
                     await self._refresh_vc_state(userbot, chat_id)
                     await asyncio.sleep(1.5)
 
-                LOGGER.info(f"[join_call] Executing join_group_call (attempt {attempt}) for {chat_id}...")
-                await asyncio.wait_for(
-                    assistant.join_group_call(
-                        chat_id,
-                        stream,
-                        stream_type=StreamType().pulse_stream,
-                    ),
-                    timeout=30
-                )
+                if IS_LEGACY:
+                    LOGGER.info(f"[join_call] Legacy Mode: Joining via join() and start_audio() for {chat_id}...")
+                    # 1. Join the chat
+                    try:
+                        await asyncio.wait_for(assistant.join(chat_id), timeout=20)
+                    except AlreadyJoinedError:
+                        pass
+                    except Exception as e:
+                        if "ALREADY_JOINED" in str(e): pass
+                        else: raise e
+                    
+                    # 2. Start the audio stream
+                    # In 0.9.x, link is usually the file path or a specific input stream
+                    audio_path = link if isinstance(link, str) else getattr(stream, 'path', link)
+                    await asyncio.wait_for(assistant.start_audio(audio_path), timeout=20)
+                    LOGGER.info(f"[join_call] Legacy SUCCESS for {chat_id}")
+                else:
+                    LOGGER.info(f"[join_call] Executing join_group_call (attempt {attempt}) for {chat_id}...")
+                    await asyncio.wait_for(
+                        assistant.join_group_call(
+                            chat_id,
+                            stream,
+                            stream_type=StreamType().pulse_stream,
+                        ),
+                        timeout=30
+                    )
                 joined = True
                 LOGGER.info(f"[join_call] SUCCESS: Joined VC in {chat_id}")
                 break
@@ -611,15 +627,13 @@ class Call(PyTgCalls):
                 last_err = "No active voice chat found. Please start a voice chat first."
                 LOGGER.warning(f"[join_call] NoActiveGroupCall in {chat_id}")
                 break
-            except TelegramServerError as e:
-                last_err = e
-                LOGGER.warning(f"[join_call] TelegramServerError (attempt {attempt}) for {chat_id}: {e}")
-                await asyncio.sleep(2)
             except Exception as e:
                 import traceback
                 last_err = e
-                LOGGER.error(f"[join_call] CRITICAL: Attempt {attempt} failed for {chat_id}: {type(e).__name__}: {e}")
-                LOGGER.error(f"[join_call] Full traceback:\n{traceback.format_exc()}")
+                err_name = type(e).__name__
+                LOGGER.error(f"[join_call] Attempt {attempt} failed ({err_name}): {e}")
+                if "join_group_call" in str(e) and IS_LEGACY:
+                    LOGGER.warning("[join_call] Legacy assistant does not have join_group_call. Check detection.")
                 await asyncio.sleep(1)
 
         if not joined:
