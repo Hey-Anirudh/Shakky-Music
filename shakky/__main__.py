@@ -95,20 +95,33 @@ async def init():
 
     LOGGER("shakky").info("Music Bot Started as Shakky Music Bot")
     
-    await idle()
-    
-    # Cleanup
-    cleanup_task.cancel()
-    if webapp_task:
-        webapp_task.cancel()
+    try:
+        await idle()
+    except (KeyboardInterrupt, SystemExit):
+        LOGGER("shakky").info("Stop signal received locally. Shutting down...")
+    finally:
+        # Cleanup
+        LOGGER("shakky").info("Cleaning up and stopping clients...")
+        cleanup_task.cancel()
+        if webapp_task:
+            webapp_task.cancel()
+        
         try:
-            await webapp_task
-        except asyncio.CancelledError:
+            await app.stop()
+            from shakky import userbot
+            await userbot.stop()
+        except:
             pass
-
-    await app.stop()
-    from shakky import userbot
-    await userbot.stop()
+        
+        # Final Force Exit to prevent hanging on Windows/VPS
+        LOGGER("shakky").info("Exiting...")
+        os._exit(0)
     
 if __name__ == "__main__":
-    asyncio.get_event_loop().run_until_complete(init())
+    loop = asyncio.get_event_loop()
+    try:
+        loop.run_until_complete(init())
+    except KeyboardInterrupt:
+        pass
+    finally:
+        os._exit(0)
