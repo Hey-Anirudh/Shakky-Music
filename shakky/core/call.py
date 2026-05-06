@@ -470,13 +470,25 @@ class Call(PyTgCalls):
         last_err = None
         
         try:
-            await assistant.join_group_call(chat_id, stream)
+            # 🔄 Fresh Start: Try to leave first in case of a ghost session
+            try: await assistant.leave_group_call(chat_id)
+            except: pass
+            await asyncio.sleep(0.5)
+
+            # 🚀 Primary Join Attempt
+            LOGGER.info(f"[join_call] Attempting to join VC for {chat_id}...")
+            await assistant.join_group_call(
+                chat_id, 
+                stream, 
+                stream_type=StreamType().pulse_stream
+            )
             joined = True
         except AlreadyJoinedError:
             joined = True
-        except NoActiveGroupCall as e:
+        except Exception as e:
             last_err = e
-            LOGGER.warning(f"[join_call] NoActiveGroupCall. Refreshing...")
+            # If standard join fails, try refresh state and retry once
+            LOGGER.warning(f"[join_call] Join failed: {e}. Refreshing state and retrying...")
             await refresh_vc_state()
             await asyncio.sleep(1)
             try:
@@ -488,12 +500,9 @@ class Call(PyTgCalls):
                 joined = True
             except Exception as e2:
                 last_err = e2
-                LOGGER.warning(f"[join_call] pulse_stream failed after refresh: {e2}")
-        except Exception as e:
-            import traceback
-            err_full = traceback.format_exc()
-            last_err = e
-            LOGGER.error(f"[join_call] Unexpected error: {e}\n{err_full}")
+                import traceback
+                err_full = traceback.format_exc()
+                LOGGER.error(f"[join_call] Retry failed: {e2}\n{err_full}")
 
         if not joined:
             LOGGER.error(f"[join_call] Failed to join VC. Last error: {last_err}")
