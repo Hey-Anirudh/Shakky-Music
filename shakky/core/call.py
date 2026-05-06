@@ -103,7 +103,7 @@ except ImportError:
                 
                 async def change_stream(chat_id, stream):
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
-                        # 🌪️ RELIABILITY UPDATE: Unique FIFOs per transition
+                        # 🌪️ DIRECT OUTPUT UPDATE: Avoiding shell redirection
                         
                         # Cleanup old process for this chat
                         if self._parent and chat_id in self._parent._chat_procs:
@@ -117,17 +117,19 @@ except ImportError:
                         try: os.mkfifo(pipe_path)
                         except: pass
                         
-                        # Start FFmpeg as a background process writing to the FIFO
-                        cmd = f"{stream} > {pipe_path}"
+                        # We replace the placeholder with the actual pipe path
+                        final_cmd = stream.replace("pipe:1", f'"{pipe_path}"')
+                        
+                        # Start FFmpeg writing DIRECTLY to the pipe
                         proc = await asyncio.create_subprocess_shell(
-                            cmd,
+                            final_cmd,
                             stdout=asyncio.subprocess.DEVNULL,
                             stderr=asyncio.subprocess.DEVNULL
                         )
                         if self._parent: self._parent._chat_procs[chat_id] = proc
                         
                         # Wait a bit for the pipe to be initialized
-                        await asyncio.sleep(0.7)
+                        await asyncio.sleep(1.0)
                         
                         # We pass the FIFO path to the legacy voice engine
                         return await self._call.start_audio(pipe_path)
@@ -254,7 +256,8 @@ class Call:
             # We move seek_arg BEFORE -i for much faster seeking (Input Seeking)
             # Added -vn to ensure no video stream is processed for audio pipes
             # Switched to WAV format to ensure the legacy engine recognizes the stream header
-            return f'ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i "{path}" {filter_arg} -vn -f wav pipe:1'
+            # Removed -re to fill the pipe as fast as possible (prevents underflow)
+            return f'ffmpeg -y -loglevel panic {seek_arg} -i "{path}" {filter_arg} -vn -f wav pipe:1'
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
