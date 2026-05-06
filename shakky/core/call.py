@@ -209,6 +209,7 @@ class Call:
         self._locks = {}
         self._last_skip = {}
         self._active_effects = {} # chat_id -> effect_payload
+        self._switching = set() # Tracks chats currently applying filters to ignore transient "end" events
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
@@ -298,32 +299,40 @@ class Call:
         """Applies a specific audio filter in real-time by re-syncing the stream."""
         if not playing: return
         
-        # 1. Update active effect state
-        if filter_key:
-            from shakky.plugins.admins.filters import AUDIO_FILTERS
-            self._active_effects[chat_id] = {"af": AUDIO_FILTERS[filter_key]["ffmpeg"]}
-        else:
-            self._active_effects.pop(chat_id, None)
+        # Mark as switching to prevent on_stream_end from skipping the song
+        self._switching.add(chat_id)
+        
+        try:
+            # 1. Update active effect state
+            if filter_key:
+                from shakky.plugins.admins.filters import AUDIO_FILTERS
+                self._active_effects[chat_id] = {"af": AUDIO_FILTERS[filter_key]["ffmpeg"]}
+            else:
+                self._active_effects.pop(chat_id, None)
 
-        # 2. Calculate current seek position
-        track = playing[0]
-        start_time = track.get("start_time", time.time())
-        current_pos = int(time.time() - start_time)
-        if current_pos < 0: current_pos = 0
-        
-        # 3. Build new stream with seek and filter
-        payload = {"ss": current_pos}
-        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0), chat_id=chat_id)
-        
-        # 4. Apply to assistant
-        ass = await group_assistant(self, chat_id)
-        if IS_LEGACY:
-             # FIFO will handle the new command string
-             await ass.change_stream(chat_id, stream)
-        else:
-             await ass.change_stream(chat_id, stream)
-             await asyncio.sleep(0.5)
-             await ass.resume_stream(chat_id)
+            # 2. Calculate current seek position
+            track = playing[0]
+            start_time = track.get("start_time", time.time())
+            current_pos = int(time.time() - start_time)
+            if current_pos < 0: current_pos = 0
+            
+            # 3. Build new stream with seek and filter
+            payload = {"ss": current_pos}
+            stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0), chat_id=chat_id)
+            
+            # 4. Apply to assistant
+            ass = await group_assistant(self, chat_id)
+            if IS_LEGACY:
+                 # FIFO will handle the new command string
+                 await ass.change_stream(chat_id, stream)
+            else:
+                 await ass.change_stream(chat_id, stream)
+                 await asyncio.sleep(0.5)
+                 await ass.resume_stream(chat_id)
+        finally:
+            # Wait a bit for any transient events to fire and be ignored
+            await asyncio.sleep(2)
+            self._switching.discard(chat_id)
 
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
         lock = self.get_lock(chat_id)
@@ -449,6 +458,7 @@ class Call:
         async def eh(client, update: Update):
             cid = getattr(update, 'chat_id', None)
             if cid:
+                if cid in self._switching: return
                 is_end = False
                 if IS_V3:
                     from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
