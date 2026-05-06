@@ -38,8 +38,8 @@ AUDIO_FILTERS = {
     },
     "slowed_reverb": {
         "label": "🎻 Slowed+Reverb",
-        "ffmpeg": "asetrate=44100*0.8,aresample=44100,aecho=1.0:0.5:40:0.5",
-        "description": "Lo-fi slowed with atmospheric reverb",
+        "ffmpeg": "asetrate=44100*0.8,aresample=44100,aecho=0.8:0.88:60:0.4",
+        "description": "Lo-fi slowed with premium reverb",
     },
 }
 
