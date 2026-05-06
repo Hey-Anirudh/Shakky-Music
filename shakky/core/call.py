@@ -1,22 +1,82 @@
 import asyncio
 import os
 import time
+import re
+import logging
 from datetime import datetime, timedelta
 from typing import Union
 
 from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
-from pyrogram.types import InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+
+import pytgcalls
+from pytgcalls.exceptions import (
+    AlreadyJoinedError,
+    NoActiveGroupCall,
+    TelegramServerError,
+)
+
+# --- 🎭 Remade Effects System (The Core of the Overhaul) ---
+class VoiceFilter:
+    """Centralized registry and composer for all audio/video effects."""
+    
+    # Static Filter Library
+    PRESETS = {
+        "fade_in": "afade=t=in:ss=0:d=1.5",
+        "fade_out": "afade=t=out:st={dur_sec}-1.5:d=1.5",
+        "bass_boost": "bass=g=15,aecho=0.8:0.88:60:0.4",
+        "nightcore": "asetrate=48000*1.25,atempo=1.25",
+        "slowmo": "asetrate=48000*0.8,atempo=0.8",
+        "echo": "aecho=0.8:0.88:60:0.4",
+        "reverb": "aecho=0.8:0.88:60:0.4", # Simple proxy
+    }
+
+    @classmethod
+    def build_ffmpeg_args(cls, payload: dict, duration_sec: int = 0) -> str:
+        """
+        Translates a logic payload into a raw FFmpeg filter string.
+        Payload keys: 'fade_in', 'fade_out', 'bass', 'nightcore', 'af' (raw)
+        """
+        if not payload:
+            return ""
+            
+        filters = []
+        if payload.get("fade_in") or payload.get("is_prodj"):
+            filters.append(cls.PRESETS["fade_in"])
+        
+        if payload.get("fade_out") and duration_sec > 5:
+            filters.append(cls.PRESETS["fade_out"].format(dur_sec=duration_sec))
+            
+        if payload.get("bass"):
+            filters.append(cls.PRESETS["bass_boost"])
+            
+        if payload.get("nightcore"):
+            filters.append(cls.PRESETS["nightcore"])
+            
+        # Raw pass-through for custom effects
+        if payload.get("af"):
+            filters.append(payload["af"])
+            
+        # Seek support integrated into effects string for legacy stability
+        ss = payload.get("ss", 0)
+        to = payload.get("to")
+        
+        # We return the filter chain
+        return ",".join(filters)
+
 # 🤖 Universal Core Switch (ARM VPS Fix)
-# This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
+IS_V3 = False
+IS_LEGACY = False
+
 try:
     # --- Modern Era (v1, v2, v3) ---
     from pytgcalls import PyTgCalls, StreamType
     from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
-    # Event detection
+    if not hasattr(PyTgCalls, "join_group_call"): raise ImportError("Legacy")
     try:
         from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
         IS_V3 = True
@@ -24,7 +84,8 @@ try:
         IS_V3 = False
     IS_LEGACY = False
 except ImportError:
-    # --- Legacy Era (v0) ---
+    # --- Legacy Era (v0.9.x) ---
+    IS_LEGACY = True
     try:
         from pytgcalls import GroupCallFactory
         class PyTgCalls:
@@ -38,56 +99,40 @@ except ImportError:
                 self.start_audio = self._call.start_audio
                 self.pause_stream = self._call.pause_stream
                 self.resume_stream = self._call.resume_stream
-                # Map modern change_stream to legacy start_audio
+                
                 async def change_stream(chat_id, stream):
                     path = getattr(stream, 'path', stream)
-                    filters = getattr(stream, 'kwargs', {}).get('additional_ffmpeg_parameters', "")
+                    filters = getattr(stream, 'filters', "")
+                    # The ONLY reliable way to apply effects in 0.9.7 is -af
                     if filters:
-                        return await self._call.start_audio(path, ffmpeg_parameters=filters)
+                        return await self._call.start_audio(path, ffmpeg_parameters=f"-af \"{filters}\"")
                     return await self._call.start_audio(path)
                 self.change_stream = change_stream
-        
-        IS_LEGACY = True
-        IS_V3 = False
-        # Legacy dummies/shims
-        class AudioPiped: 
-            def __init__(self, p, **kwargs): 
-                self.path = p
-                self.kwargs = kwargs
-        class AudioVideoPiped(AudioPiped): pass
-        class HighQualityAudio: pass
-        class MediumQualityVideo: pass
-        class Update: pass
-        class StreamAudioEnded: pass
-        class StreamVideoEnded: pass
-        class StreamDeleted: pass
-        class StreamType:
-            pulse_stream = "pulse"
-            pulse = "pulse"
     except ImportError:
-        # Fallback for dev-specific paths
-        try:
-            from pytgcalls.pytgcalls import PyTgCalls
-            from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-            IS_V3 = False
-            IS_LEGACY = False
-            # Qualities might still be missing in some dev builds
-            try:
-                from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
-            except ImportError:
-                class HighQualityAudio: pass
-                class MediumQualityVideo: pass
-        except ImportError:
-            raise ImportError("Critical: No compatible PyTgCalls found. Run ./vps_fix.sh")
+        try: from pytgcalls import PyTgCalls
+        except ImportError: raise ImportError("Critical: No PyTgCalls found.")
 
-from pytgcalls.exceptions import (
-    AlreadyJoinedError,
-    NoActiveGroupCall,
-    TelegramServerError,
-)
+    # Legacy dummies/shims
+    class AudioPiped: 
+        def __init__(self, p, **kwargs): 
+            self.path = p
+            self.filters = kwargs.get("additional_ffmpeg_parameters", "")
+            self.ss = kwargs.get("additional_ffmpeg_parameters", "") # simplified
+    class AudioVideoPiped(AudioPiped): pass
+    class HighQualityAudio: pass
+    class MediumQualityVideo: pass
+    class Update: pass
+    class StreamAudioEnded: pass
+    class StreamVideoEnded: pass
+    class StreamDeleted: pass
+    class StreamType:
+        pulse_stream = "pulse"
+        pulse = "pulse"
 
-# Implementation selection is now handled via PYTGCALLS_IMPLEMENTATION environment variable
-# to maintain compatibility across different dev versions of pytgcalls.
+# Ensure types
+if "StreamAudioEnded" not in globals(): class StreamAudioEnded: pass
+if "Update" not in globals(): class Update: pass
+if "StreamType" not in globals(): class StreamType: pulse = "pulse"; pulse_stream = "pulse"
 
 import config
 from shakky import YouTube, app
@@ -115,14 +160,7 @@ from strings import get_string
 autoend = {}
 counter = {}
 
-import logging
-
-# Configure basic logging so messages actually appear
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-)
-
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 LOGGER = logging.getLogger(__name__)
 
 async def _clear_(chat_id):
@@ -130,869 +168,240 @@ async def _clear_(chat_id):
     await remove_active_video_chat(chat_id)
     await remove_active_chat(chat_id)
 
-
-class Call(PyTgCalls):
+class Call:
     def __init__(self):
-        # We rely on defaults or PYTGCALLS_IMPLEMENTATION env var (set in vps_fix.sh)
-        # The 'implementation' keyword is NOT supported in some pytgcalls 3.x builds.
-        
-        self.userbot1 = Client(
-            name="Ass1",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING1),
-        )
+        self.userbot1 = Client(name="Ass1", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING1), no_updates=True)
         self.one = PyTgCalls(self.userbot1, cache_duration=100)
-        
-        self.userbot2 = Client(
-            name="Ass2",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING2),
-        )
-        self.two = PyTgCalls(self.userbot2, cache_duration=100)
-        
-        self.userbot3 = Client(
-            name="Ass3",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING3),
-        )
-        self.three = PyTgCalls(self.userbot3, cache_duration=100)
-        
-        self.userbot4 = Client(
-            name="Ass4",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING4),
-        )
-        self.four = PyTgCalls(self.userbot4, cache_duration=100)
-        
-        self.userbot5 = Client(
-            name="Ass5",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            session_string=str(config.STRING5),
-        )
-        self.five = PyTgCalls(self.userbot5, cache_duration=100)
+        self.userbot2 = Client(name="Ass2", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING2), no_updates=True) if config.STRING2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
+        self.userbot3 = Client(name="Ass3", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING3), no_updates=True) if config.STRING3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
+        self.userbot4 = Client(name="Ass4", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING4), no_updates=True) if config.STRING4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
+        self.userbot5 = Client(name="Ass5", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING5), no_updates=True) if config.STRING5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
         self._locks = {}
         self._last_skip = {}
+        self._active_effects = {} # chat_id -> effect_payload
 
     def get_lock(self, chat_id: int):
-        if chat_id not in self._locks:
-            self._locks[chat_id] = asyncio.Lock()
+        if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
 
-    async def pause_stream(self, chat_id: int):
-        assistant = await group_assistant(self, chat_id)
-        try:
-            await assistant.pause_stream(chat_id)
-        except Exception as e:
-            LOGGER.warning(f"PyTgCalls pause_stream failed (non-critical): {e}")
-        try:
-            current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
-            queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
-            await notify_webapp(chat_id, current_song=current_song, queue=queue, is_playing=False, action="pause")
-        except: pass
-
-    async def resume_stream(self, chat_id: int):
-        assistant = await group_assistant(self, chat_id)
-        try:
-            await assistant.resume_stream(chat_id)
-        except Exception as e:
-            LOGGER.warning(f"PyTgCalls resume_stream failed (non-critical): {e}")
-        try:
-            current_song = db.get(chat_id, [{}])[0] if db.get(chat_id) else None
-            queue = db.get(chat_id, [])[1:6] if db.get(chat_id) else []
-            await notify_webapp(chat_id, current_song=current_song, queue=queue, is_playing=True, action="play")
-        except: pass
-
-    async def stop_stream(self, chat_id: int):
-        assistant = await group_assistant(self, chat_id)
-        try:
-            await _clear_(chat_id)
-            await assistant.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            await notify_webapp(chat_id, action="stop")
-        except: pass
-
-    async def stop_stream_force(self, chat_id: int):
-        try:
-            if config.STRING1:
-                await self.one.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            if config.STRING2:
-                await self.two.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            if config.STRING3:
-                await self.three.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            if config.STRING4:
-                await self.four.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            if config.STRING5:
-                await self.five.leave_group_call(chat_id)
-        except:
-            pass
-        try:
-            await _clear_(chat_id)
-        except:
-            pass
-
-    async def speedup_stream(self, chat_id: int, file_path, speed, playing):
-        assistant = await group_assistant(self, chat_id)
-        if str(speed) != str("1.0"):
-            base = os.path.basename(file_path)
-            chatdir = os.path.join(os.getcwd(), "playback", str(speed))
-            if not os.path.isdir(chatdir):
-                os.makedirs(chatdir)
-            out = os.path.join(chatdir, base)
-            if not os.path.isfile(out):
-                if str(speed) == str("0.5"):
-                    vs = 2.0
-                if str(speed) == str("0.75"):
-                    vs = 1.35
-                if str(speed) == str("1.5"):
-                    vs = 0.68
-                if str(speed) == str("2.0"):
-                    vs = 0.5
-                proc = await asyncio.create_subprocess_shell(
-                    cmd=(
-                        "ffmpeg "
-                        "-i "
-                        f"{file_path} "
-                        "-filter:v "
-                        f"setpts={vs}*PTS "
-                        "-filter:a "
-                        f"atempo={speed} "
-                        f"{out}"
-                    ),
-                    stdin=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                await proc.communicate()
-            else:
-                pass
+    # --- 🛠️ Remade Stream Builder (Centralized) ---
+    def build_stream(self, path, video, payload=None, duration=0):
+        """Constructs the appropriate stream object with filters applied."""
+        # Merge global effects if any
+        chat_id = payload.get("chat_id") if payload else None
+        if chat_id and chat_id in self._active_effects:
+             merged_payload = {**self._active_effects[chat_id], **(payload or {})}
         else:
-            out = file_path
-        dur = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
-        dur = int(dur)
-        played, con_seconds = speed_converter(playing[0]["played"], speed)
-        duration = seconds_to_min(dur)
-        stream = (
-            AudioVideoPiped(
-                out,
-                audio_parameters=HighQualityAudio(),
-                video_parameters=MediumQualityVideo(),
-                additional_ffmpeg_parameters=f"-ss {played} -to {duration}",
-            )
-            if playing[0]["streamtype"] == "video"
-            else AudioPiped(
-                out,
-                audio_parameters=HighQualityAudio(),
-                additional_ffmpeg_parameters=f"-ss {played} -to {duration}",
-            )
-        )
-        if str(db[chat_id][0]["file"]) == str(file_path):
-            try:
-                await assistant.change_stream(chat_id, stream)
-            except Exception as e:
-                LOGGER.error(f"speedup_stream failed: {e}")
-        else:
-            raise AssistantErr("➲ **Cannot change speed, file mismatch.**")
-        if str(db[chat_id][0]["file"]) == str(file_path):
-            exis = (playing[0]).get("old_dur")
-            if not exis:
-                db[chat_id][0]["old_dur"] = db[chat_id][0]["dur"]
-                db[chat_id][0]["old_second"] = db[chat_id][0]["seconds"]
-            db[chat_id][0]["played"] = con_seconds
-            db[chat_id][0]["dur"] = duration
-            db[chat_id][0]["seconds"] = dur
-            db[chat_id][0]["speed_path"] = out
-            db[chat_id][0]["speed"] = speed
+             merged_payload = payload or {}
 
-    async def force_stop_stream(self, chat_id: int):
-        assistant = await group_assistant(self, chat_id)
-        try:
-            check = db.get(chat_id)
-            check.pop(0)
-        except:
-            pass
-        await remove_active_video_chat(chat_id)
-        await remove_active_chat(chat_id)
-        try:
-            await assistant.leave_group_call(chat_id)
-        except:
-            pass
-
-    async def skip_stream(
-        self,
-        chat_id: int,
-        link: str,
-        video: Union[bool, str] = None,
-        image: Union[bool, str] = None,
-    ):
-        assistant = await group_assistant(self, chat_id)
-        if video:
-            stream = AudioVideoPiped(
-                link,
-                audio_parameters=HighQualityAudio(),
-                video_parameters=MediumQualityVideo(),
-            )
-        else:
-            stream = AudioPiped(link, audio_parameters=HighQualityAudio())
-        try:
-            await assistant.change_stream(chat_id, stream)
-            # Ensure ntgcalls pipeline restart safely
-            try:
-                await asyncio.sleep(0.5)
-                await assistant.resume_stream(chat_id)
-            except:
-                pass
-        except Exception as e:
-            LOGGER.error(f"skip_stream failed: {e}")
-
-    async def seek_stream(self, chat_id, file_path, to_seek, duration, mode):
-        assistant = await group_assistant(self, chat_id)
-        # Convert to_seek to int seconds if it's a string (e.g. "01:30")
-        try:
-            if isinstance(to_seek, str) and ":" in to_seek:
-                from shakky.utils.formatters import time_to_seconds
-                to_seek_seconds = time_to_seconds(to_seek)
-            else:
-                to_seek_seconds = int(to_seek)
-        except:
-            to_seek_seconds = 0
-
-        stream = (
-            AudioVideoPiped(
-                file_path,
-                audio_parameters=HighQualityAudio(),
-                video_parameters=MediumQualityVideo(),
-                additional_ffmpeg_parameters=f"-ss {to_seek_seconds} -to {duration}",
-            )
-            if mode == "video"
-            else AudioPiped(
-                file_path,
-                audio_parameters=HighQualityAudio(),
-                additional_ffmpeg_parameters=f"-ss {to_seek_seconds} -to {duration}",
-            )
-        )
-        try:
-            await assistant.change_stream(chat_id, stream)
-            try:
-                await asyncio.sleep(0.5)
-                await assistant.resume_stream(chat_id)
-            except:
-                pass
-        except Exception as e:
-            LOGGER.error(f"seek_stream failed: {e}")
-
-    async def stream_call(self, link):
-        assistant = await group_assistant(self, config.LOG_GROUP_ID)
-        await assistant.join_group_call(
-            config.LOG_GROUP_ID,
-            AudioVideoPiped(link),
-            stream_type=StreamType().pulse_stream,
-        )
-        await asyncio.sleep(0.2)
-        await assistant.leave_group_call(config.LOG_GROUP_ID)
-
-    async def join_call(
-        self,
-        chat_id: int,
-        original_chat_id: int,
-        link,
-        video: Union[bool, str] = None,
-        image: Union[bool, str] = None,
-        payload: dict = None,
-    ):
-        assistant = await group_assistant(self, chat_id)
-        language = await get_lang(chat_id)
-        _ = get_string(language)
-        # Build stream
-        ffmpeg_args = payload.get("af", "") if payload else ""
-        if video:
-            stream = AudioVideoPiped(
-                link,
-                audio_parameters=HighQualityAudio(),
-                video_parameters=MediumQualityVideo(),
-                additional_ffmpeg_parameters=ffmpeg_args,
-            )
-        else:
-            stream = (
-                AudioVideoPiped(
-                    link,
-                    audio_parameters=HighQualityAudio(),
-                    video_parameters=MediumQualityVideo(),
-                    additional_ffmpeg_parameters=ffmpeg_args,
-                )
-                if video
-                else AudioPiped(link, audio_parameters=HighQualityAudio(), additional_ffmpeg_parameters=ffmpeg_args)
-            )
-        # --- JIT Assistant Metadata Sync ---
-        userbot = None
-        if assistant == self.one: userbot = self.userbot1
-        elif assistant == self.two: userbot = self.userbot2
-        elif assistant == self.three: userbot = self.userbot3
-        elif assistant == self.four: userbot = self.userbot4
-        elif assistant == self.five: userbot = self.userbot5
-
-        async def refresh_vc_state():
-            if not userbot: return
-            try:
-                # get_chat is more robust than resolve_peer for populating local cache
-                chat = await userbot.get_chat(chat_id)
-                # If it's a channel, we need the FullChannel info for VC detection
-                if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]:
-                    from pyrogram.raw.functions.channels import GetFullChannel
-                    peer = await userbot.resolve_peer(chat_id)
-                    await userbot.invoke(GetFullChannel(channel=peer))
-                else:
-                    from pyrogram.raw.functions.messages import GetFullChat
-                    await userbot.invoke(GetFullChat(chat_id=chat_id))
-            except Exception as e:
-                LOGGER.warning(f"[join_call] VC state sync failed for {chat_id}: {e}")
-
-        # --- Assistant Membership & Ban Handling ---
-        try:
-            if not userbot.me:
-                try:
-                    await userbot.get_me()
-                except Exception as me_err:
-                    LOGGER.error(f"[join_call] Failed to get_me for assistant: {me_err}")
-
-            assistant_id = userbot.me.id
-            assistant_mention = userbot.me.mention
-            
-            try:
-                member = await app.get_chat_member(chat_id, assistant_id)
-                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.info(f"Assistant {assistant_id} is banned/kicked in {chat_id}. Attempting to unban...")
-                    try:
-                        await app.unban_chat_member(chat_id, assistant_id)
-                        LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
-                    except Exception as e:
-                        LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
-                        raise AssistantErr(f"➲ **Assistant is kicked/banned in this chat.**\n\n**Please UNBAN {assistant_mention} manually and try again.**")
-            except UserNotParticipant:
-                LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
-                try:
-                    await app.add_chat_members(chat_id, assistant_id)
-                    LOGGER.info(f"Added Assistant {assistant_id} to {chat_id}")
-                except Exception as e:
-                    LOGGER.warning(f"Failed to add Assistant via bot: {e}. Trying via invite link...")
-                    try:
-                        chat = await app.get_chat(chat_id)
-                        invitelink = chat.invite_link
-                        if not invitelink:
-                            try:
-                                invitelink = await app.export_chat_invite_link(chat_id)
-                            except:
-                                pass
-                        
-                        if invitelink:
-                            await userbot.join_chat(invitelink)
-                            LOGGER.info(f"Assistant {assistant_id} joined via invite link.")
-                        else:
-                            raise AssistantErr(f"➲ **Assistant is not in this chat and I cannot add it.**\n\n**Please add {assistant_mention} manually and try again.**")
-                    except Exception as join_err:
-                         LOGGER.error(f"Join via invite link failed: {join_err}")
-                         raise AssistantErr(f"➲ **Assistant is not in this chat.**\n\n**Please add {assistant_mention} manually and try again.**")
-            except Exception as e:
-                # If we get a "KICKED" error here, it means we can't even check status. Try unbanning as last resort.
-                if "KICKED" in str(e).upper():
-                    LOGGER.warning(f"Assistant {assistant_id} check failed with KICKED. Trying emergency unban...")
-                    try:
-                        await app.unban_chat_member(chat_id, assistant_id)
-                        # After unban, try to add
-                        try:
-                            await app.add_chat_members(chat_id, assistant_id)
-                        except:
-                            pass
-                    except:
-                        pass
-                LOGGER.error(f"Membership check for Assistant failed: {e}")
-                # Don't re-raise general exceptions yet, try to proceed and see if join_group_call works
-        except AssistantErr:
-            raise
-        except Exception as e:
-            LOGGER.error(f"Error while ensuring assistant is in group: {e}")
-
-        await refresh_vc_state()
-
-        # --- Joining Logic ---
-        joined = False
-        last_err = None
+        filters = VoiceFilter.build_ffmpeg_args(merged_payload, duration)
         
+        # Seek logic integration
+        ss = merged_payload.get("ss", 0)
+        to = merged_payload.get("to", "")
+        seek_args = f"-ss {ss}"
+        if to: seek_args += f" -to {to}"
+        
+        # Combine seek and filters
+        final_args = f"{seek_args} -af \"{filters}\"" if filters else seek_args
+        
+        if video:
+            return AudioVideoPiped(path, HighQualityAudio(), MediumQualityVideo(), additional_ffmpeg_parameters=final_args)
+        return AudioPiped(path, HighQualityAudio(), additional_ffmpeg_parameters=final_args)
+
+    async def join_call(self, chat_id, original_chat_id, link, video=None, image=None, payload=None):
+        assistant = await group_assistant(self, chat_id)
+        userbot = self.userbot1 if assistant == self.one else (self.userbot2 if assistant == self.two else (self.userbot3 if assistant == self.three else (self.userbot4 if assistant == self.four else self.userbot5)))
+        
+        # Build stream using new system
+        dur = payload.get("seconds", 0) if payload else 0
+        stream = self.build_stream(link, video, payload, dur)
+
+        # Ensure membership
         try:
-            await assistant.join_group_call(chat_id, stream)
-            joined = True
-        except AlreadyJoinedError:
-            joined = True
-        except NoActiveGroupCall as e:
-            last_err = e
-            LOGGER.warning(f"[join_call] NoActiveGroupCall. Refreshing...")
-            await refresh_vc_state()
-            await asyncio.sleep(1)
+            member = await app.get_chat_member(chat_id, userbot.me.id if userbot.me else (await userbot.get_me()).id)
+            if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
+                await app.unban_chat_member(chat_id, userbot.me.id)
+        except UserNotParticipant:
+            try: await app.add_chat_members(chat_id, userbot.me.id)
+            except: 
+                chat = await app.get_chat(chat_id)
+                if chat.invite_link: await userbot.join_chat(chat.invite_link)
+
+        # Refresh VC state
+        try:
+            from pyrogram.raw.functions.channels import GetFullChannel
+            from pyrogram.raw.functions.messages import GetFullChat
+            peer = await userbot.resolve_peer(chat_id)
+            if isinstance(peer, (ChatType.CHANNEL, ChatType.SUPERGROUP)): await userbot.invoke(GetFullChannel(channel=peer))
+            else: await userbot.invoke(GetFullChat(chat_id=chat_id))
+        except: pass
+
+        # Join
+        joined = False
+        for attempt in range(2):
             try:
-                await assistant.join_group_call(
-                    chat_id, stream, stream_type=StreamType().pulse_stream
-                )
-                joined = True
-            except AlreadyJoinedError:
-                joined = True
-            except Exception as e2:
-                last_err = e2
-                LOGGER.warning(f"[join_call] pulse_stream failed after refresh: {e2}")
-        except Exception as e:
-            import traceback
-            err_full = traceback.format_exc()
-            last_err = e
-            LOGGER.error(f"[join_call] Unexpected error: {e}\n{err_full}")
+                if IS_LEGACY:
+                    try: await assistant.join(chat_id)
+                    except: pass
+                    path = getattr(stream, "path", link)
+                    filters = getattr(stream, "filters", "")
+                    if filters: await asyncio.wait_for(assistant.start_audio(path, ffmpeg_parameters=f"-af \"{filters}\""), timeout=20)
+                    else: await asyncio.wait_for(assistant.start_audio(path), timeout=20)
+                else:
+                    await asyncio.wait_for(assistant.join_group_call(chat_id, stream), timeout=30)
+                joined = True; break
+            except AlreadyJoinedError: joined = True; break
+            except Exception as e:
+                LOGGER.error(f"[join] Attempt {attempt} failed: {e}")
+                await asyncio.sleep(1)
 
         if not joined:
-            LOGGER.error(f"[join_call] Failed to join VC. Last error: {last_err}")
-            try:
-                from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                webapp_url = f"{config.WEBAPP_URL}?room={chat_id}"
-                btn = InlineKeyboardMarkup([[InlineKeyboardButton("🎧 Open Web Player", url=webapp_url)]])
-                await app.send_message(
-                    original_chat_id, 
-                    text="⚠️ **Voice Chat is not turned on!**\n\n➲ **I will continue playing the track in the WebApp.**\n➲ **Click the button below to listen live.**",
-                    reply_markup=btn
-                )
-            except Exception as e:
-                LOGGER.error(f"Failed to send VC off warning: {e}")
-            # Continue without raising AssistantErr to allow WebApp playback
+            try: await app.send_message(original_chat_id, text="⚠️ **Voice Chat is not active. Using WebApp only.**")
+            except: pass
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
-        if video:
-            await add_active_video_chat(chat_id)
-        if await is_autoend():
-            counter[chat_id] = {}
-            try:
-                users = len(await assistant.get_participants(chat_id))
-                if users == 1:
-                    autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-            except: pass
-        
+        if video: await add_active_video_chat(chat_id)
 
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
         lock = self.get_lock(chat_id)
         async with lock:
-            # 🩹 FIX: Anti-Double-Skip Logic
-            # Prevents watchdog and on_stream_end events from skipping twice in < 2s
-            now = time.time()
             if not skip_pop:
-                if chat_id in self._last_skip:
-                    if now - self._last_skip[chat_id] < 1.5:
-                        LOGGER.info(f"[change_stream] Ignoring duplicate skip for {chat_id}")
-                        return
-                self._last_skip[chat_id] = now
+                if time.time() - self._last_skip.get(chat_id, 0) < 1.5: return
+                self._last_skip[chat_id] = time.time()
 
             check = db.get(chat_id)
             if not check:
                 await _clear_(chat_id)
-                try:
-                    return await client.leave_group_call(chat_id)
-                except:
-                    return
+                try: 
+                    if IS_LEGACY: await client.leave(chat_id)
+                    else: await client.leave_group_call(chat_id)
+                except: pass
+                return
 
             if not skip_pop:
-                popped = None
                 loop = await get_loop(chat_id)
-                try:
-                    if loop == 0:
-                        popped = check.pop(0)
-                    else:
-                        loop = loop - 1
-                        await set_loop(chat_id, loop)
-                    
-                    if popped:
-                        await auto_clean(popped)
-                    
-                    if not check:
-                        await _clear_(chat_id)
-                        try:
-                            return await client.leave_group_call(chat_id)
-                        except:
-                            return
-                except Exception as e:
-                    LOGGER.error(f"Error in change_stream: {e}")
+                if loop == 0:
+                    popped = check.pop(0)
+                    await auto_clean(popped)
+                else: await set_loop(chat_id, loop - 1)
+                
+                if not check:
+                    await _clear_(chat_id)
                     try:
-                        await _clear_(chat_id)
-                        return await client.leave_group_call(chat_id)
-                    except:
-                        return
-
-            queued = check[0]["file"]
-            language = await get_lang(chat_id)
-            _ = get_string(language)
-            title = (check[0]["title"]).title()
-            user = check[0]["by"]
-            original_chat_id = check[0]["chat_id"]
-            streamtype = check[0]["streamtype"]
-            videoid = check[0]["vidid"]
-            
-            is_intro = False
-            # --- AI CO-HOST LOGIC ---
-            from shakky.utils.database import is_cohost
-            if await is_cohost(chat_id) and not check[0].get("cohost_played") and "live_" not in queued:
-                from shakky.utils.cohost import generate_cohost_script, text_to_speech
-                check[0]["cohost_played"] = True
-                try:
-                    script = await generate_cohost_script(title, user)
-                    intro_file = await text_to_speech(script, chat_id)
-                    if intro_file and os.path.exists(intro_file):
-                        queued = intro_file
-                        streamtype = "audio"
-                        is_intro = True
-                        LOGGER.info(f"Playing AI Co-Host intro for {chat_id}: {script}")
-                except Exception as e:
-                    LOGGER.error(f"Co-Host activation failed: {e}")
-
-            if is_intro:
-                if video:
-                    stream = AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
-                else:
-                    stream = AudioPiped(queued, HighQualityAudio())
-                try:
-                    await client.change_stream(chat_id, stream)
-                    return
-                except Exception as e:
-                    LOGGER.error(f"Intro stream failed: {e}")
-                    # If intro fails, continue to play the real song
-            
-            db[chat_id][0]["played"] = 0
-            exis = (check[0]).get("old_dur")
-            if exis:
-                db[chat_id][0]["dur"] = exis
-                db[chat_id][0]["seconds"] = check[0]["old_second"]
-                db[chat_id][0]["speed_path"] = None
-                db[chat_id][0]["speed"] = 1.0
-            video = True if str(streamtype) == "video" else False
-
-            # --- JIT Download for vid_ references (with 30s timeout) ---
-            if "vid_" in queued:
-                # Resolve Spotify tracks first if needed
-                if "vid_sp_" in queued and not videoid:
-                    try:
-                        from shakky import YouTube as YT
-                        # Clean title: remove hashtags and extra junk for better search accuracy
-                        search_query = re.sub(r'#\w+', '', title).strip()
-                        search_res = await YT.search(search_query or title)
-                        if search_res:
-                            videoid = search_res["vidid"]
-                            db[chat_id][0]["vidid"] = videoid
-                            db[chat_id][0]["dur"] = search_res["duration"]
+                        if IS_LEGACY: await client.leave(chat_id)
+                        else: await client.leave_group_call(chat_id)
                     except: pass
+                    return
 
-
-                if not os.path.exists(queued) and videoid:
-                    try:
-                        from shakky.platforms import YouTube as YT
-                        file_path, direct = await asyncio.wait_for(
-                            YT.download(videoid, video=video, raw_query=title),
-                            timeout=60 # Increased timeout for VPS stability
-                        )
-
-                        if file_path and os.path.exists(file_path):
-                            queued = file_path
-                            db[chat_id][0]["file"] = file_path
-                            try:
-                                dur = await asyncio.get_event_loop().run_in_executor(
-                                    None, check_duration, file_path
-                                )
-                                dur = int(dur)
-                                db[chat_id][0]["seconds"] = dur
-                                db[chat_id][0]["dur"] = seconds_to_min(dur)
-                            except:
-                                pass
-                        else:
-                            LOGGER.error(f"JIT download returned no file for {videoid}")
-                            queued = None
-                    except asyncio.TimeoutError:
-                        LOGGER.error(f"JIT download timed out for {videoid}")
-                        queued = None
-                    except Exception as e:
-                        LOGGER.error(f"Failed JIT Download in change_stream: {e}")
-                        queued = None
-                else:
-                    queued = queued if os.path.exists(queued) else None
-
-            elif "live_" in queued:
-                n, link = await YouTube.video(videoid, True)
-                if n == 0:
-                    return await app.send_message(original_chat_id, text="Error fetching live stream.")
-                queued = link
-
-            # --- Build stream object ---
-            if not queued:
-                LOGGER.error(f"No valid file to stream for chat {chat_id} (Track: {title}). Skipping to next...")
+            track = check[0]
+            queued = track["file"]
+            title = track["title"].title()
+            videoid = track["vidid"]
+            video = (track["streamtype"] == "video")
+            
+            # JIT Download
+            if "vid_" in queued and not os.path.exists(queued) and videoid:
                 try:
-                    # Notify user about failure
-                    await app.send_message(original_chat_id, text=f"❌ **Failed to play:** `{title}`\n➲ **Skipping to next track...**")
-                except:
-                    pass
-                
-                # Check if we still have more songs in queue
-                if len(db[chat_id]) > 0:
-                    # Pop the track that just failed
-                    db[chat_id].pop(0)
-                    if len(db[chat_id]) > 0:
-                        # Recursive call with skip_pop=True
-                        # Add a small delay to prevent "Skipping Loop" from wiping the queue instantly
-                        await asyncio.sleep(1.5)
-                        return await self.change_stream(client, chat_id, skip_pop=True)
+                    from shakky.platforms import YouTube as YT
+                    file_path, _ = await asyncio.wait_for(YT.download(videoid, video=video, raw_query=title), timeout=60)
+                    if file_path: queued = file_path; track["file"] = file_path
+                except: queued = None
+            
+            if not queued or not os.path.exists(queued):
+                if len(check) > 0:
+                    check.pop(0)
+                    if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
+                await _clear_(chat_id); return
 
-                
-                # If we get here, no playable songs left
-                await _clear_(chat_id)
-                try: return await client.leave_group_call(chat_id)
-                except: return
-
-            if video:
-                stream = AudioVideoPiped(queued, HighQualityAudio(), MediumQualityVideo())
-            else:
-                stream = AudioPiped(queued, HighQualityAudio())
-
-            # --- Change the VC stream ---
+            # Build stream with effects
+            # We assume current song might need fade-in if it's the start of a session or Pro-DJ
+            payload = {"is_prodj": True} if chat_id in self._active_effects else {}
+            stream = self.build_stream(queued, video, payload, track.get("seconds", 0))
+            
             try:
-                db[chat_id][0]["start_time"] = time.time()
+                track["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
             except Exception as e:
-                import traceback
-                err_msg = str(e)
-                err_full = traceback.format_exc()
-                LOGGER.error(f"change_stream failed for {chat_id}: {err_msg}")
-                
-                err_msg_lower = err_msg.lower()
-                # Whitelist common VC-is-off errors to allow WebApp playback to continue
-                if any(x in err_msg_lower for x in ["noactivegroupcall", "notincall", "call", "group call", "isn't in a"]):
-                    LOGGER.warning(f"Ignoring change_stream error for WebApp playback: {err_msg}")
-                    # Allow execution to continue for WebApp notifications, don't skip track.
-                else:
-                    # Log the FULL error for permanent fix diagnosis
-                    with open("last_error.txt", "w", encoding="utf-8") as f:
-                        from datetime import datetime
-                        f.write(f"Timestamp: {datetime.now()}\nChat ID: {chat_id}\nTitle: {title}\nError: {err_msg}\n\nTraceback:\n{err_full}")
-                    
-                    try:
-                        await app.send_message(original_chat_id, text=f"⚠️ **Streaming Error:** `{title}`\n**Reason:** `{err_msg[:100]}`\n➲ **Skipping to next track...**")
-                    except:
-                        pass
-                    
-                    if len(db[chat_id]) > 0:
-                        # Pop failed track
-                        db[chat_id].pop(0)
-                        if len(db[chat_id]) > 0:
-                            asyncio.create_task(self.change_stream(client, chat_id, skip_pop=True))
-                            return
-                    
-                    await _clear_(chat_id)
-                    try: return await client.leave_group_call(chat_id)
-                    except: return
+                LOGGER.error(f"change_stream failed: {e}")
+                if len(check) > 0:
+                    check.pop(0)
+                    if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
+                await _clear_(chat_id); return
 
-            # --- Fire-and-forget WebApp notification (non-blocking) ---
-            asyncio.create_task(self._notify_webapp_safe(chat_id))
+            asyncio.create_task(notify_webapp(chat_id, current_song=track, queue=check[1:6], action="skip", is_playing=True))
+            asyncio.create_task(self._send_now_playing(chat_id, videoid, title, track["by"], track["chat_id"], mention))
 
-            # --- Generate thumbnail + send Now Playing (background) ---
-            asyncio.create_task(
-                self._send_now_playing(
-                    chat_id, videoid, title, user, original_chat_id, _, mention
-                )
-            )
-
-            # --- Pre-download next track in queue (background) ---
-            asyncio.create_task(self._predownload_next(chat_id))
-
-    async def _notify_webapp_safe(self, chat_id):
-        """Fire-and-forget webapp notification."""
+    async def pause_stream(self, chat_id):
+        ass = await group_assistant(self, chat_id)
         try:
-            await notify_webapp(
-                chat_id,
-                current_song=db[chat_id][0],
-                queue=db[chat_id][1:6],
-                action="skip",
-                is_playing=True,
-            )
-        except Exception as e:
-            LOGGER.warning(f"WebApp notify failed: {e}")
-            
-        # --- Stats Update for Wrapped ---
+             if not IS_LEGACY: await ass.pause_stream(chat_id)
+        except: pass
+        await notify_webapp(chat_id, action="pause", is_playing=False)
+
+    async def resume_stream(self, chat_id):
+        ass = await group_assistant(self, chat_id)
         try:
-            from shakky.utils.database import update_stats
-            u_id = db[chat_id][0].get("user_id")
-            d_sec = db[chat_id][0].get("seconds", 0)
-            if u_id:
-                asyncio.create_task(update_stats(u_id, chat_id, videoid, title, d_sec))
-        except:
-            pass
+             if not IS_LEGACY: await ass.resume_stream(chat_id)
+        except: pass
+        await notify_webapp(chat_id, action="play", is_playing=True)
 
-    async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, _, mention):
-        """Generate thumbnail and send Now Playing message in background."""
+    async def stop_stream(self, chat_id):
+        ass = await group_assistant(self, chat_id)
         try:
-            duration_min = db[chat_id][0].get("dur", "0:00")
-            try:
-                thumb_path = await get_thumb(videoid, title, duration_min, user, chat_id)
-                db[chat_id][0]["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
-            except Exception as e:
-                LOGGER.error(f"Thumbnail generation error: {e}")
-                thumb_path = config.STREAM_IMG_URL
+            await _clear_(chat_id)
+            if IS_LEGACY: await ass.leave(chat_id)
+            else: await ass.leave_group_call(chat_id)
+        except: pass
+        await notify_webapp(chat_id, action="stop")
 
-            button = stream_markup(_, chat_id)
-            msg_text = (
-                f"▷ **Now Playing**\n"
-                f"━━━━━━━━━━━━━━━━━━\n"
-                f"✧ **Track:** `{title[:28]}`\n"
-                f"✧ **Duration:** `{duration_min}`\n"
-                f"✧ **By:** {user}"
-            )
-            if mention:
-                msg_text += f"\n✧ **Skipped By:** {mention}"
-            
-            try:
-                run = await app.send_photo(
-                    original_chat_id,
-                    photo=thumb_path,
-                    caption=msg_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-            except Exception as e:
-                LOGGER.error(f"Thumbnail send failed in call.py, sending message instead: {e}")
-                run = await app.send_message(
-                    original_chat_id,
-                    text=msg_text,
-                    reply_markup=InlineKeyboardMarkup(button),
-                )
-            
-            db[chat_id][0]["mystic"] = run
-            db[chat_id][0]["markup"] = "stream"
-        except Exception as e:
-            LOGGER.error(f"Failed to send Now Playing msg: {e}")
-
-    async def _predownload_next(self, chat_id):
-        """Pre-download the next track in queue so it's ready instantly."""
+    async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, mention):
         try:
-            check = db.get(chat_id)
-            if not check or len(check) < 2:
-                return
-            next_track = check[1]
-            next_file = next_track.get("file", "")
-            next_vid = next_track.get("vidid", "")
-            if "vid_" in next_file and not os.path.exists(next_file) and next_vid:
-                from shakky.platforms import YouTube as YT
-                LOGGER.info(f"Pre-downloading next track: {next_track.get('title', next_vid)}")
-                file_path, _ = await asyncio.wait_for(
-                    YT.download(next_vid, raw_query=next_track.get("title")),
-                    timeout=45
-                )
-                if file_path and os.path.exists(file_path):
-                    next_track["file"] = file_path
-                    LOGGER.info(f"Pre-download complete: {file_path}")
-        except asyncio.TimeoutError:
-            LOGGER.warning(f"Pre-download timed out for chat {chat_id}")
-        except Exception as e:
-            LOGGER.debug(f"Pre-download failed (non-critical): {e}")
-
-    async def ping(self):
-        pings = []
-        if config.STRING1:
-            pings.append(await self.one.ping)
-        if config.STRING2:
-            pings.append(await self.two.ping)
-        if config.STRING3:
-            pings.append(await self.three.ping)
-        if config.STRING4:
-            pings.append(await self.four.ping)
-        if config.STRING5:
-            pings.append(await self.five.ping)
-        return str(round(sum(pings) / len(pings), 3))
+            dur = db[chat_id][0].get("dur", "0:00")
+            thumb = await get_thumb(videoid, title, dur, user, chat_id)
+            markup = stream_markup(None, chat_id)
+            cap = f"▷ **Now Playing**\n━━━━━━━━━━━━━━━━━━\n✧ **Track:** `{title[:30]}`\n✧ **Duration:** `{dur}`\n✧ **By:** {user}"
+            if mention: cap += f"\n✧ **Skipped By:** {mention}"
+            msg = await app.send_photo(original_chat_id, photo=thumb, caption=cap, reply_markup=InlineKeyboardMarkup(markup))
+            db[chat_id][0]["mystic"] = msg
+        except: pass
 
     async def start(self):
-        LOGGER.info("Starting PyTgCalls Client...\n")
-        if config.STRING1:
-            await self.one.start()
-        if config.STRING2:
-            await self.two.start()
-        if config.STRING3:
-            await self.three.start()
-        if config.STRING4:
-            await self.four.start()
-        if config.STRING5:
-            await self.five.start()
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if ass: await ass.start()
+
+    async def stop(self):
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if ass:
+                try: await ass.stop()
+                except: pass
 
     async def decorators(self):
-        @self.one.on_kicked()
-        @self.two.on_kicked()
-        @self.three.on_kicked()
-        @self.four.on_kicked()
-        @self.five.on_kicked()
-        @self.one.on_closed_voice_chat()
-        @self.two.on_closed_voice_chat()
-        @self.three.on_closed_voice_chat()
-        @self.four.on_closed_voice_chat()
-        @self.five.on_closed_voice_chat()
-        @self.one.on_left()
-        @self.two.on_left()
-        @self.three.on_left()
-        @self.four.on_left()
-        @self.five.on_left()
-        async def stream_services_handler(_, chat_id: int):
-            await self.stop_stream(chat_id)
-
-        @self.one.on_stream_end()
-        @self.two.on_stream_end()
-        @self.three.on_stream_end()
-        @self.four.on_stream_end()
-        @self.five.on_stream_end()
-        async def stream_end_handler1(client, update: Update):
-            update_type = type(update).__name__
-            chat_id = getattr(update, 'chat_id', None)
-            LOGGER.info(f"[on_stream_end] Received update type={update_type} chat={chat_id}")
-
-            if not chat_id:
-                LOGGER.warning(f"[on_stream_end] No chat_id on update {update_type}, ignoring.")
-                return
-
-            # Only act on genuine end-of-stream events
-            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
-                # StreamDeleted also means the stream is gone
-                try:
-                    from pytgcalls.types.stream import StreamDeleted
-                    if isinstance(update, StreamDeleted):
-                        LOGGER.info(f"[on_stream_end] StreamDeleted for {chat_id}, treating as stream end.")
-                    else:
-                        LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
-                        return
-                except ImportError:
-                    LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
-                    return
-
-            LOGGER.info(f"[on_stream_end] Processing stream end for chat {chat_id}")
+        def reg(client, ev, h):
+            if not client: return
             try:
-                # Disconnect execution from the event loop using create_task
-                asyncio.create_task(self.change_stream(client, chat_id))
-            except Exception as e:
-                LOGGER.error(f"[on_stream_end] change_stream failed for {chat_id}: {e}")
-                try:
-                    await self.stop_stream(chat_id)
-                except:
-                    pass
+                m = getattr(client, ev, None)
+                if m: m()(h)
+            except: pass
+        async def sh(_, chat_id: int): await self.stop_stream(chat_id)
+        async def eh(client, update: Update):
+            cid = getattr(update, 'chat_id', None)
+            if cid:
+                is_end = False
+                if IS_V3:
+                    from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
+                    if isinstance(update, (StreamAudioEnded, StreamVideoEnded, StreamDeleted)): is_end = True
+                elif type(update).__name__ in ["StreamAudioEnded", "StreamVideoEnded", "StreamDeleted"]: is_end = True
+                if is_end: asyncio.create_task(self.change_stream(client, cid))
 
-
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if not ass: continue
+            reg(ass, "on_kicked", sh); reg(ass, "on_closed_voice_chat", sh); reg(ass, "on_left", sh); reg(ass, "on_stream_end", eh)
 
 Nand = Call()
 ani = Nand
