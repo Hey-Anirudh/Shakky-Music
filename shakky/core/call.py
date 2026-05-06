@@ -448,13 +448,13 @@ class Call(PyTgCalls):
             try:
                 member = await app.get_chat_member(chat_id, assistant_id)
                 if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.info(f"Assistant {assistant_id} is banned/kicked in {chat_id}. Attempting to unban...")
+                    LOGGER.warning(f"Assistant {assistant_id} reported as banned/kicked in {chat_id}. Attempting to unban and proceed anyway...")
                     try:
                         await app.unban_chat_member(chat_id, assistant_id)
                         LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
                     except Exception as e:
                         LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
-                        raise AssistantErr(f"➲ **Assistant is kicked/banned in this chat.**\n\n**Please UNBAN {assistant_mention} manually and try again.**")
+                    # 🚀 Force-Proceed: Don't raise AssistantErr. Let the joining logic try its best.
             except UserNotParticipant:
                 LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
                 try:
