@@ -103,17 +103,16 @@ except ImportError:
                 
                 async def change_stream(chat_id, stream):
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
-                        # 🌪️ FIFO OVERHAUL: Using Named Pipes for 100% legacy compatibility
+                        # 🌪️ RELIABILITY UPDATE: Unique FIFOs per transition
                         
                         # Cleanup old process for this chat
                         if self._parent and chat_id in self._parent._chat_procs:
                             try: self._parent._chat_procs[chat_id].terminate()
                             except: pass
                         
-                        pipe_path = f"downloads/shakky_pipe_{abs(chat_id)}.raw"
-                        if os.path.exists(pipe_path):
-                            try: os.remove(pipe_path)
-                            except: pass
+                        # Create a unique pipe path to avoid conflicts
+                        ts = int(time.time())
+                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.raw")
                         
                         try: os.mkfifo(pipe_path)
                         except: pass
@@ -127,8 +126,8 @@ except ImportError:
                         )
                         if self._parent: self._parent._chat_procs[chat_id] = proc
                         
-                        # Wait a tiny bit for the pipe to be ready
-                        await asyncio.sleep(0.5)
+                        # Wait a bit for the pipe to be initialized
+                        await asyncio.sleep(0.7)
                         
                         # We pass the FIFO path to the legacy voice engine
                         return await self._call.start_audio(pipe_path)
@@ -203,6 +202,7 @@ async def _clear_(chat_id):
 
 class Call:
     def __init__(self):
+        os.makedirs("downloads", exist_ok=True)
         def _init_ass(userbot):
             if not userbot: return None
             if IS_LEGACY: return PyTgCalls(userbot, parent=self, cache_duration=100)
@@ -253,7 +253,7 @@ class Call:
             
             # We move seek_arg BEFORE -i for much faster seeking (Input Seeking)
             # Added -vn to ensure no video stream is processed for audio pipes
-            return f"ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i {path} {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1"
+            return f'ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i "{path}" {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1'
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
