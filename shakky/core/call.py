@@ -569,6 +569,11 @@ class Call(PyTgCalls):
 
             check = db.get(chat_id)
             if not check:
+                # --- Smart Auto-DJ Hook ---
+                from shakky.utils.database import is_autodj
+                if await is_autodj(chat_id):
+                    asyncio.create_task(self._autodj_next(chat_id))
+                    return
                 await _clear_(chat_id)
                 try:
                     return await client.leave_group_call(chat_id)
@@ -589,6 +594,11 @@ class Call(PyTgCalls):
                         await auto_clean(popped)
                     
                     if not check:
+                        # --- Smart Auto-DJ Hook ---
+                        from shakky.utils.database import is_autodj
+                        if await is_autodj(chat_id):
+                            asyncio.create_task(self._autodj_next(chat_id))
+                            return
                         await _clear_(chat_id)
                         try:
                             return await client.leave_group_call(chat_id)
@@ -783,6 +793,27 @@ class Call(PyTgCalls):
             # --- Pre-download next track in queue (background) ---
             asyncio.create_task(self._predownload_next(chat_id))
 
+    async def _autodj_next(self, chat_id):
+        """Find and play a related track when the queue is empty (Smart Auto-DJ)."""
+        from shakky.misc import last_played
+        from shakky.utils.stream.recommend_logic import start_ai_recommendation
+        
+        last_song = last_played.get(chat_id)
+        if not last_song:
+            # Fallback if no last_played context
+            try:
+                await app.send_message(chat_id, text="✨ **Smart Auto-DJ:** Queue is empty and no playback context found. Stopping.")
+            except: pass
+            return await self.stop_stream(chat_id)
+            
+        try:
+            # Re-use the existing AI recommendation logic
+            # This will search, download, and call stream() which adds to queue and starts playback
+            await start_ai_recommendation(chat_id, user_name="Smart Auto-DJ")
+        except Exception as e:
+            LOGGER.error(f"Auto-DJ failed for {chat_id}: {e}")
+            await self.stop_stream(chat_id)
+
     async def _notify_webapp_safe(self, chat_id):
         """Fire-and-forget webapp notification."""
         try:
@@ -871,6 +902,107 @@ class Call(PyTgCalls):
             LOGGER.warning(f"Pre-download timed out for chat {chat_id}")
         except Exception as e:
             LOGGER.debug(f"Pre-download failed (non-critical): {e}")
+
+    async def apply_audio_filter(self, chat_id: int, filter_key, playing):
+        """Apply a spatial audio filter to the current stream, or reset to original.
+
+        Args:
+            chat_id: The chat to apply the filter in.
+            filter_key: One of 'bass_boost', '8d_audio', 'nightcore', 'slowed_reverb', or None to reset.
+            playing: The current db[chat_id] list.
+        """
+        from shakky.plugins.admins.filters import AUDIO_FILTERS
+
+        assistant = await group_assistant(self, chat_id)
+        current = playing[0]
+
+        # Resolve the *original* file path (before any speed/filter modifications)
+        original_file = current.get("original_file") or current.get("file")
+        if not original_file or not os.path.exists(original_file):
+            raise AssistantErr("➲ **Cannot apply filter — original file not found.**")
+
+        # Store the original file reference if not already saved
+        if not current.get("original_file"):
+            db[chat_id][0]["original_file"] = original_file
+
+        # Calculate current playback position
+        start_time = current.get("start_time", time.time())
+        played_seconds = int(time.time() - start_time)
+        total_seconds = current.get("seconds", 0)
+        if played_seconds < 0:
+            played_seconds = 0
+        if total_seconds > 0 and played_seconds > total_seconds:
+            played_seconds = total_seconds
+
+        if filter_key is None:
+            # Reset to original
+            out = original_file
+            db[chat_id][0]["active_filter"] = None
+        else:
+            if filter_key not in AUDIO_FILTERS:
+                raise AssistantErr("➲ **Unknown filter.**")
+
+            ffmpeg_filter = AUDIO_FILTERS[filter_key]["ffmpeg"]
+
+            # Build cached output path: playback/filters/<filter_key>/<filename>
+            base = os.path.basename(original_file)
+            filter_dir = os.path.join(os.getcwd(), "playback", "filters", filter_key)
+            if not os.path.isdir(filter_dir):
+                os.makedirs(filter_dir)
+            out = os.path.join(filter_dir, base)
+
+            if not os.path.isfile(out):
+                LOGGER.info(f"[filter] Rendering {filter_key} for {base}...")
+                proc = await asyncio.create_subprocess_shell(
+                    cmd=(
+                        f'ffmpeg -y -i "{original_file}" '
+                        f'-af "{ffmpeg_filter}" '
+                        f'-c:v copy '
+                        f'"{out}"'
+                    ),
+                    stdin=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
+                if proc.returncode != 0:
+                    LOGGER.error(f"[filter] FFmpeg error: {stderr.decode()[:300]}")
+                    raise AssistantErr("➲ **FFmpeg failed to process filter.**")
+                LOGGER.info(f"[filter] Rendered: {out}")
+
+            db[chat_id][0]["active_filter"] = filter_key
+
+        # Recalculate duration of filtered file
+        dur = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
+        dur = int(dur)
+        duration_str = seconds_to_min(dur)
+
+        # Build the new stream object, seeking to current position
+        streamtype = current.get("streamtype", "audio")
+        if streamtype == "video":
+            stream = AudioVideoPiped(
+                out,
+                audio_parameters=HighQualityAudio(),
+                video_parameters=MediumQualityVideo(),
+                additional_ffmpeg_parameters=f"-ss {played_seconds} -to {duration_str}",
+            )
+        else:
+            stream = AudioPiped(
+                out,
+                audio_parameters=HighQualityAudio(),
+                additional_ffmpeg_parameters=f"-ss {played_seconds} -to {duration_str}",
+            )
+
+        try:
+            await assistant.change_stream(chat_id, stream)
+        except Exception as e:
+            LOGGER.error(f"[filter] change_stream failed: {e}")
+            raise AssistantErr(f"➲ **Failed to swap stream:** `{e}`")
+
+        # Update db metadata to reflect filtered playback
+        db[chat_id][0]["file"] = out
+        db[chat_id][0]["start_time"] = time.time() - played_seconds
+        db[chat_id][0]["seconds"] = dur
+        db[chat_id][0]["dur"] = duration_str
 
     async def ping(self):
         pings = []
