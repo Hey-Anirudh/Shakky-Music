@@ -448,16 +448,26 @@ class Call(PyTgCalls):
             LOGGER.info(f"[join_call] Using Assistant {assistant_id} (@{userbot.me.username}) for Chat {chat_id}")
             
             try:
-                # 🛠️ Deep Unban: Explicitly unban to clear any Telegram caches
-                await app.unban_chat_member(chat_id, assistant_id)
+                # 🛠️ Deep Refresh: Re-ping and verify session is alive
+                try: await userbot.get_me()
+                except: await userbot.start()
+                
+                # 🛠️ Presence Refresh: Try to join via invite link to 'wake up' the membership
+                try:
+                    chat = await app.get_chat(chat_id)
+                    invitelink = chat.invite_link or await app.export_chat_invite_link(chat_id)
+                    if invitelink:
+                        await userbot.join_chat(invitelink)
+                except: pass
+
+                # 🛠️ Deep Unban: Clear any ghost bans
+                try: await app.unban_chat_member(chat_id, assistant_id)
+                except: pass
                 await asyncio.sleep(0.5)
-                # 🛠️ Force-Add: Ensure they are definitely treated as a member
-                try: await app.add_chat_members(chat_id, assistant_id)
-                except: pass 
             except Exception as e:
-                LOGGER.warning(f"Deep unban/add failed for Assistant {assistant_id} (likely already in): {e}")
+                LOGGER.warning(f"Nuclear refresh had minor issues for Assistant {assistant_id}: {e}")
             
-            # 🚀 Proceed to join regardless of any status check errors
+            # 🚀 Proceed to join directly
         except AssistantErr:
             raise
         except Exception as e:
