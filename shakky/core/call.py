@@ -538,7 +538,10 @@ class Call(PyTgCalls):
         userbot = self._get_userbot(assistant)
 
         # --- Step 1: Ensure assistant is a MEMBER of the chat ---
-        is_member = await self._ensure_joined(chat_id, assistant)
+        LOGGER.info(f"[join_call] Step 1: Ensuring Assistant membership for {chat_id}...")
+        is_member = await asyncio.wait_for(self._ensure_joined(chat_id, assistant), timeout=30)
+        LOGGER.info(f"[join_call] Step 1 complete. is_member={is_member}")
+        
         if not is_member:
             LOGGER.error(f"[join_call] Assistant could not join chat {chat_id}. Raising error.")
             raise AssistantErr(
@@ -574,10 +577,13 @@ class Call(PyTgCalls):
                     await asyncio.sleep(1.5)
 
                 LOGGER.info(f"[join_call] Executing join_group_call (attempt {attempt}) for {chat_id}...")
-                await assistant.join_group_call(
-                    chat_id,
-                    stream,
-                    stream_type=StreamType().pulse_stream,
+                await asyncio.wait_for(
+                    assistant.join_group_call(
+                        chat_id,
+                        stream,
+                        stream_type=StreamType().pulse_stream,
+                    ),
+                    timeout=30
                 )
                 joined = True
                 LOGGER.info(f"[join_call] SUCCESS: Joined VC in {chat_id}")
@@ -1128,6 +1134,23 @@ class Call(PyTgCalls):
         if config.STRING5:
             pings.append(await self.five.ping)
         return str(round(sum(pings) / len(pings), 3))
+
+    async def stop(self):
+        LOGGER.info("Stopping PyTgCalls Clients...")
+        try:
+            if config.STRING1:
+                await self.one.stop()
+            if config.STRING2 and self.two:
+                await self.two.stop()
+            if config.STRING3 and self.three:
+                await self.three.stop()
+            if config.STRING4 and self.four:
+                await self.four.stop()
+            if config.STRING5 and self.five:
+                await self.five.stop()
+            LOGGER.info("PyTgCalls Clients stopped.")
+        except Exception as e:
+            LOGGER.warning(f"Error while stopping PyTgCalls: {e}")
 
     async def start(self):
         LOGGER.info("Starting PyTgCalls Client...\n")

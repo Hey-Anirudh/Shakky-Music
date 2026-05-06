@@ -110,8 +110,10 @@ async def init():
             await app.stop()
             from shakky import userbot
             await userbot.stop()
-        except:
-            pass
+            # Stop PyTgCalls engine
+            await asyncio.wait_for(Nand.stop(), timeout=10)
+        except Exception as e:
+            LOGGER("shakky").warning(f"Error during shutdown cleanup: {e}")
         
         # Final Force Exit to prevent hanging on Windows/VPS
         LOGGER("shakky").info("Exiting...")
