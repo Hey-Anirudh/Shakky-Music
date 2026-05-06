@@ -838,8 +838,8 @@ class Call(PyTgCalls):
             
         try:
             # Re-use the existing AI recommendation logic
-            # Passing prefetch ensures it doesn't try to force-start if we just want to queue it
-            await start_ai_recommendation(chat_id, user_name="Smart Auto-DJ")
+            # Passing prefetch as silent ensures it doesn't try to force-start if we just want to queue it
+            await start_ai_recommendation(chat_id, user_name="Smart Auto-DJ", silent=prefetch)
         except Exception as e:
             if not prefetch:
                 LOGGER.error(f"Auto-DJ failed for {chat_id}: {e}")

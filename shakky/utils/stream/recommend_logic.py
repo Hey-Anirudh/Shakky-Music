@@ -5,7 +5,7 @@ from shakky.misc import last_played, db
 from shakky.utils.groq import get_song_recommendation
 from .stream import stream as start_stream
 
-async def start_ai_recommendation(chat_id, user_id=None, user_name="AI"):
+async def start_ai_recommendation(chat_id, user_id=None, user_name="AI", silent=False):
     """
     Utility to get a recommendation and start playing it.
     Can be called from both the callback and automatically.
@@ -20,17 +20,21 @@ async def start_ai_recommendation(chat_id, user_id=None, user_name="AI"):
         LOGGER("AI").error(f"Groq failed for recommendation in {chat_id}")
         return
     
-    # Notify chat that AI is choosing
-    mystic = await app.send_message(
-        chat_id, 
-        text=f"✦ **AI AUTO-PILOT**\n━━━━━━━━━━━━━━━━━━\n✧ **Context:** `{last_song}`\n✧ **Choosing:** `{rec_title}`"
-    )
+    mystic = None
+    if not silent:
+        # Notify chat that AI is choosing
+        mystic = await app.send_message(
+            chat_id, 
+            text=f"✦ **AI AUTO-PILOT**\n━━━━━━━━━━━━━━━━━━\n✧ **Context:** `{last_song}`\n✧ **Choosing:** `{rec_title}`"
+        )
     
     # 🔍 Search & Stream
     try:
         results = await YouTube.search(rec_title)
         if not results:
-             return await mystic.edit_text(f"❌ AI suggested '{rec_title}' but it was not found.")
+             if mystic:
+                 return await mystic.edit_text(f"❌ AI suggested '{rec_title}' but it was not found.")
+             return
         
         # We need a user_id for the stream engine, use bot's or provided
         final_user_id = user_id or (app.me.id if app.me else 0)
