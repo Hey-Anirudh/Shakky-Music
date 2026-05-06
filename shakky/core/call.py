@@ -89,9 +89,10 @@ except ImportError:
     try:
         from pytgcalls import GroupCallFactory
         class PyTgCalls:
-            def __init__(self, client, **kwargs):
+            def __init__(self, client, parent=None, **kwargs):
                 self._factory = GroupCallFactory(client)
                 self._call = self._factory.get_group_call()
+                self._parent = parent
                 self.start = self._call.start
                 self.stop = self._call.stop
                 self.join = self._call.join
@@ -103,6 +104,12 @@ except ImportError:
                 async def change_stream(chat_id, stream):
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
                         # 🌪️ FIFO OVERHAUL: Using Named Pipes for 100% legacy compatibility
+                        
+                        # Cleanup old process for this chat
+                        if self._parent and chat_id in self._parent._chat_procs:
+                            try: self._parent._chat_procs[chat_id].terminate()
+                            except: pass
+                        
                         pipe_path = f"downloads/shakky_pipe_{abs(chat_id)}.raw"
                         if os.path.exists(pipe_path):
                             try: os.remove(pipe_path)
@@ -112,13 +119,13 @@ except ImportError:
                         except: pass
                         
                         # Start FFmpeg as a background process writing to the FIFO
-                        # We use a shell command to ensure redirection works
                         cmd = f"{stream} > {pipe_path}"
-                        asyncio.create_subprocess_shell(
+                        proc = await asyncio.create_subprocess_shell(
                             cmd,
                             stdout=asyncio.subprocess.DEVNULL,
                             stderr=asyncio.subprocess.DEVNULL
                         )
+                        if self._parent: self._parent._chat_procs[chat_id] = proc
                         
                         # Wait a tiny bit for the pipe to be ready
                         await asyncio.sleep(0.5)
@@ -197,19 +204,20 @@ async def _clear_(chat_id):
 class Call:
     def __init__(self):
         self.userbot1 = Client(name="Ass1", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING1), no_updates=True)
-        self.one = PyTgCalls(self.userbot1, cache_duration=100)
+        self.one = PyTgCalls(self.userbot1, self, cache_duration=100)
         self.userbot2 = Client(name="Ass2", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING2), no_updates=True) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
+        self.two = PyTgCalls(self.userbot2, self, cache_duration=100) if self.userbot2 else None
         self.userbot3 = Client(name="Ass3", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING3), no_updates=True) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
+        self.three = PyTgCalls(self.userbot3, self, cache_duration=100) if self.userbot3 else None
         self.userbot4 = Client(name="Ass4", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING4), no_updates=True) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
+        self.four = PyTgCalls(self.userbot4, self, cache_duration=100) if self.userbot4 else None
         self.userbot5 = Client(name="Ass5", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING5), no_updates=True) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
+        self.five = PyTgCalls(self.userbot5, self, cache_duration=100) if self.userbot5 else None
         self._locks = {}
         self._last_skip = {}
         self._active_effects = {} # chat_id -> effect_payload
         self._switching = set() # Tracks chats currently applying filters to ignore transient "end" events
+        self._chat_procs = {} # chat_id -> FFmpeg subprocess for legacy piping
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
@@ -238,8 +246,9 @@ class Call:
             filter_arg = f"-af \"{filters}\"" if filters else ""
             re_arg = "-re" if "http" in str(path) else ""
             
-            # We return a string that the Legacy Wrapper will recognize as a Pipe
-            return f"ffmpeg -y -loglevel panic {re_arg} -i {path} {seek_arg} {filter_arg} -f s16le -ac 2 -ar 48000 pipe:1"
+            # We move seek_arg BEFORE -i for much faster seeking (Input Seeking)
+            # Added -vn to ensure no video stream is processed for audio pipes
+            return f"ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i {path} {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1"
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
@@ -421,6 +430,11 @@ class Call:
         ass = await group_assistant(self, chat_id)
         try:
             await _clear_(chat_id)
+            if chat_id in self._chat_procs:
+                try: self._chat_procs[chat_id].terminate()
+                except: pass
+                del self._chat_procs[chat_id]
+            
             if IS_LEGACY: await ass.leave(chat_id)
             else: await ass.leave_group_call(chat_id)
         except: pass
