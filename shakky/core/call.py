@@ -7,7 +7,7 @@ from typing import Union
 from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
-from pyrogram.types import InlineKeyboardMarkup
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # 🤖 Universal Core Switch (ARM VPS Fix)
 # This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
 try:
@@ -148,11 +148,126 @@ class Call(PyTgCalls):
         self._locks = {}
         self._last_skip = {}
         self.dj_timer = {}
+        # Clean mapping: PyTgCalls instance -> Pyrogram Client
+        self._client_map = {
+            id(self.one): self.userbot1,
+            id(self.two): self.userbot2,
+            id(self.three): self.userbot3,
+            id(self.four): self.userbot4,
+            id(self.five): self.userbot5,
+        }
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks:
             self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
+
+    def _get_userbot(self, assistant) -> Client:
+        """Get the Pyrogram Client for a given PyTgCalls instance."""
+        return self._client_map.get(id(assistant))
+
+    async def _ensure_joined(self, chat_id: int, assistant) -> bool:
+        """Ensure the assistant userbot is a member of the chat.
+        Returns True if the assistant is confirmed in the chat.
+        """
+        userbot = self._get_userbot(assistant)
+        if not userbot:
+            LOGGER.error(f"[_ensure_joined] No userbot found for assistant")
+            return False
+
+        # Make sure we know our own ID
+        if not userbot.me:
+            try:
+                await userbot.get_me()
+            except Exception:
+                try:
+                    await userbot.start()
+                    await userbot.get_me()
+                except Exception as e:
+                    LOGGER.error(f"[_ensure_joined] Cannot start userbot: {e}")
+                    return False
+
+        assistant_id = userbot.me.id
+        LOGGER.info(f"[_ensure_joined] Checking Assistant {assistant_id} in chat {chat_id}")
+
+        # Step 1: Check if already a member
+        try:
+            member = await app.get_chat_member(chat_id, assistant_id)
+            if member.status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
+                LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} already in chat {chat_id}")
+                return True
+            elif member.status == ChatMemberStatus.BANNED:
+                LOGGER.warning(f"[_ensure_joined] Assistant {assistant_id} is BANNED in {chat_id}, unbanning...")
+                try:
+                    await app.unban_chat_member(chat_id, assistant_id)
+                    await asyncio.sleep(1)
+                except Exception as e:
+                    LOGGER.error(f"[_ensure_joined] Unban failed: {e}")
+                    return False
+        except UserNotParticipant:
+            LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} not in chat {chat_id}, will join")
+        except Exception as e:
+            LOGGER.warning(f"[_ensure_joined] Membership check failed: {e}")
+
+        # Step 2: Join via invite link
+        try:
+            chat = await app.get_chat(chat_id)
+            invite_link = chat.invite_link
+            if not invite_link:
+                try:
+                    invite_link = await app.export_chat_invite_link(chat_id)
+                except Exception as e:
+                    LOGGER.warning(f"[_ensure_joined] Cannot export invite link: {e}")
+            if invite_link:
+                LOGGER.info(f"[_ensure_joined] Joining via invite link...")
+                await userbot.join_chat(invite_link)
+                await asyncio.sleep(1)
+                LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} joined chat {chat_id} successfully")
+                return True
+            else:
+                LOGGER.error(f"[_ensure_joined] No invite link available for {chat_id}")
+        except Exception as e:
+            err = str(e).lower()
+            if "already" in err or "user_already_participant" in err:
+                LOGGER.info(f"[_ensure_joined] Assistant already a participant (from join_chat)")
+                return True
+            LOGGER.error(f"[_ensure_joined] join_chat failed: {e}")
+
+        # Step 3: Try adding directly via bot
+        try:
+            await app.add_chat_members(chat_id, assistant_id)
+            await asyncio.sleep(1)
+            LOGGER.info(f"[_ensure_joined] Added assistant via add_chat_members")
+            return True
+        except Exception as e:
+            LOGGER.warning(f"[_ensure_joined] add_chat_members failed: {e}")
+
+        # Final check: maybe one of the methods worked despite throwing
+        try:
+            member = await app.get_chat_member(chat_id, assistant_id)
+            if member.status not in (ChatMemberStatus.BANNED, ChatMemberStatus.LEFT):
+                return True
+        except:
+            pass
+
+        LOGGER.error(f"[_ensure_joined] ALL methods failed for Assistant {assistant_id} in chat {chat_id}")
+        return False
+
+    async def _refresh_vc_state(self, userbot, chat_id: int):
+        """Refresh the VC metadata cache so pytgcalls can see the active group call."""
+        if not userbot:
+            return
+        try:
+            chat = await userbot.get_chat(chat_id)
+            if chat.type in (ChatType.CHANNEL, ChatType.SUPERGROUP):
+                from pyrogram.raw.functions.channels import GetFullChannel
+                peer = await userbot.resolve_peer(chat_id)
+                await userbot.invoke(GetFullChannel(channel=peer))
+            else:
+                from pyrogram.raw.functions.messages import GetFullChat
+                await userbot.invoke(GetFullChat(chat_id=chat_id))
+        except Exception as e:
+            LOGGER.warning(f"[_refresh_vc_state] Failed for {chat_id}: {e}")
 
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
@@ -405,129 +520,70 @@ class Call(PyTgCalls):
             )
         else:
             stream = AudioPiped(
-                link, 
+                link,
                 audio_parameters=HighQualityAudio(),
                 additional_ffmpeg_parameters=ff_params
             )
-        
-        # --- JIT Assistant Metadata Sync ---
-        userbot = None
-        if assistant == self.one: userbot = self.userbot1
-        elif assistant == self.two: userbot = self.userbot2
-        elif assistant == self.three: userbot = self.userbot3
-        elif assistant == self.four: userbot = self.userbot4
-        elif assistant == self.five: userbot = self.userbot5
 
-        async def refresh_vc_state():
-            if not userbot: return
-            try:
-                # get_chat is more robust than resolve_peer for populating local cache
-                chat = await userbot.get_chat(chat_id)
-                # If it's a channel, we need the FullChannel info for VC detection
-                if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]:
-                    from pyrogram.raw.functions.channels import GetFullChannel
-                    peer = await userbot.resolve_peer(chat_id)
-                    await userbot.invoke(GetFullChannel(channel=peer))
-                else:
-                    from pyrogram.raw.functions.messages import GetFullChat
-                    await userbot.invoke(GetFullChat(chat_id=chat_id))
-            except Exception as e:
-                LOGGER.warning(f"[join_call] VC state sync failed for {chat_id}: {e}")
+        userbot = self._get_userbot(assistant)
 
-        # --- Assistant Membership & Ban Handling ---
-        try:
-            if not userbot.me:
-                try:
-                    await userbot.get_me()
-                except Exception as me_err:
-                    LOGGER.error(f"[join_call] Failed to get_me for assistant: {me_err}")
+        # --- Step 1: Ensure assistant is a MEMBER of the chat ---
+        is_member = await self._ensure_joined(chat_id, assistant)
+        if not is_member:
+            LOGGER.error(f"[join_call] Assistant could not join chat {chat_id}. Raising error.")
+            raise AssistantErr(
+                "➲ **Assistant could not join the chat.**\n"
+                "Please make sure:\n"
+                "• The bot is admin with invite permissions\n"
+                "• The assistant is not banned\n"
+                "• The group allows adding members"
+            )
 
-            # --- Assistant Identity Logging ---
-            assistant_id = userbot.me.id
-            assistant_mention = userbot.me.mention
-            LOGGER.info(f"[join_call] Using Assistant {assistant_id} (@{userbot.me.username}) for Chat {chat_id}")
-            
-            try:
-                # 🛠️ Deep Refresh: Re-ping and verify session is alive
-                try: await userbot.get_me()
-                except: await userbot.start()
-                
-                # 🛠️ Presence Refresh: Try to join via invite link to 'wake up' the membership
-                try:
-                    chat = await app.get_chat(chat_id)
-                    invitelink = chat.invite_link or await app.export_chat_invite_link(chat_id)
-                    if invitelink:
-                        await userbot.join_chat(invitelink)
-                except: pass
+        # --- Step 2: Refresh VC metadata cache ---
+        await self._refresh_vc_state(userbot, chat_id)
 
-                # 🛠️ Deep Unban: Clear any ghost bans
-                try: await app.unban_chat_member(chat_id, assistant_id)
-                except: pass
-                await asyncio.sleep(0.5)
-            except Exception as e:
-                LOGGER.warning(f"Nuclear refresh had minor issues for Assistant {assistant_id}: {e}")
-            
-            # 🚀 Proceed to join directly
-        except AssistantErr:
-            raise
-        except Exception as e:
-            LOGGER.error(f"Pre-join check failed for assistant: {e}")
-
-        await refresh_vc_state()
-
-        # --- Joining Logic ---
+        # --- Step 3: Join the Voice Chat ---
         joined = False
         last_err = None
-        
-        try:
-            # 🔄 Fresh Start: Try to leave first in case of a ghost session
-            try: await assistant.leave_group_call(chat_id)
-            except: pass
-            await asyncio.sleep(0.5)
 
-            # 🚀 Primary Join Attempt
-            LOGGER.info(f"[join_call] Attempting to join VC for {chat_id}...")
-            await assistant.join_group_call(
-                chat_id, 
-                stream, 
-                stream_type=StreamType().pulse_stream
-            )
-            joined = True
-        except AlreadyJoinedError:
-            joined = True
-        except Exception as e:
-            last_err = e
-            # If standard join fails, try refresh state and retry once
-            LOGGER.warning(f"[join_call] Join failed: {e}. Refreshing state and retrying...")
-            await refresh_vc_state()
-            await asyncio.sleep(1)
+        for attempt in range(3):
             try:
+                if attempt > 0:
+                    LOGGER.info(f"[join_call] Retry attempt {attempt} for {chat_id}...")
+                    await self._refresh_vc_state(userbot, chat_id)
+                    await asyncio.sleep(1)
+
                 await assistant.join_group_call(
-                    chat_id, stream, stream_type=StreamType().pulse_stream
+                    chat_id,
+                    stream,
+                    stream_type=StreamType().pulse_stream,
                 )
                 joined = True
+                LOGGER.info(f"[join_call] Successfully joined VC in {chat_id}")
+                break
             except AlreadyJoinedError:
                 joined = True
-            except Exception as e2:
-                last_err = e2
-                import traceback
-                err_full = traceback.format_exc()
-                LOGGER.error(f"[join_call] Retry failed: {e2}\n{err_full}")
+                break
+            except NoActiveGroupCall:
+                last_err = "No active voice chat found. Please start a voice chat first."
+                LOGGER.warning(f"[join_call] No active group call in {chat_id}")
+                break  # No point retrying if VC isn't started
+            except Exception as e:
+                last_err = e
+                LOGGER.warning(f"[join_call] Attempt {attempt} failed for {chat_id}: {e}")
 
         if not joined:
-            LOGGER.error(f"[join_call] Failed to join VC. Last error: {last_err}")
+            LOGGER.error(f"[join_call] Failed to join VC in {chat_id}. Error: {last_err}")
             try:
-                from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                 webapp_url = f"{config.WEBAPP_URL}?room={chat_id}"
                 btn = InlineKeyboardMarkup([[InlineKeyboardButton("🎧 Open Web Player", url=webapp_url)]])
                 await app.send_message(
-                    original_chat_id, 
-                    text="⚠️ **Voice Chat is not turned on!**\n\n➲ **I will continue playing the track in the WebApp.**\n➲ **Click the button below to listen live.**",
-                    reply_markup=btn
+                    original_chat_id,
+                    text=f"⚠️ **Could not join Voice Chat!**\n\n➲ **Reason:** `{str(last_err)[:100]}`\n➲ **Click below to listen via WebApp.**",
+                    reply_markup=btn,
                 )
             except Exception as e:
                 LOGGER.error(f"Failed to send VC off warning: {e}")
-            # Continue without raising AssistantErr to allow WebApp playback
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -539,7 +595,8 @@ class Call(PyTgCalls):
                 users = len(await assistant.get_participants(chat_id))
                 if users == 1:
                     autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-            except: pass
+            except:
+                pass
         
 
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
