@@ -6,6 +6,7 @@ from pyrogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
+from pyrogram.enums import ParseMode
 
 from shakky import app
 from shakky.core.call import Nand
@@ -85,7 +86,7 @@ async def filters_command(client, message: Message, _, chat_id):
         return await message.reply_text(
             "<blockquote>🎚️ <b>Audio Filters</b></blockquote>\n\n"
             "➲ Nothing is playing right now.",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
         )
 
     current = active_filters.get(chat_id)
@@ -101,7 +102,7 @@ async def filters_command(client, message: Message, _, chat_id):
         f"✧ <b>Track:</b> <code>{playing[0].get('title', 'Unknown')[:30]}</code>\n"
         f"✧ <b>Status:</b> {status_text}\n\n"
         f"<i>Select a filter to apply in real-time:</i>",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(_filter_menu_buttons(chat_id)),
     )
 
@@ -148,7 +149,7 @@ async def apply_filter_callback(client, callback: CallbackQuery):
             f"━━━━━━━━━━━━━━━━━━\n"
             f"✧ <b>Audio restored to original</b>\n"
             f"✧ <b>By:</b> {mention}",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}")],
                  [InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}")]]
@@ -175,7 +176,7 @@ async def apply_filter_callback(client, callback: CallbackQuery):
             f"━━━━━━━━━━━━━━━━━━\n"
             f"✧ <b>{fdata['label']}</b> deactivated\n"
             f"✧ <b>By:</b> {mention}",
-            parse_mode="html",
+            parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup(
                 [[InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}")],
                  [InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}")]]
@@ -197,7 +198,7 @@ async def apply_filter_callback(client, callback: CallbackQuery):
         f"✧ <b>Effect:</b> {fdata['description']}\n"
         f"✧ <b>Track:</b> <code>{playing[0].get('title', 'Unknown')[:30]}</code>\n"
         f"✧ <b>By:</b> {mention}",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             [[InlineKeyboardButton(text="🎚️ Change Filter", callback_data=f"af_menu|{chat_id}")],
              [InlineKeyboardButton(text="⏻ Reset", callback_data=f"af_apply reset|{chat_id}"),
@@ -233,6 +234,6 @@ async def filter_menu_callback(client, callback: CallbackQuery):
         f"✧ <b>Track:</b> <code>{playing[0].get('title', 'Unknown')[:30]}</code>\n"
         f"✧ <b>Status:</b> {status_text}\n\n"
         f"<i>Select a filter to apply in real-time:</i>",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(_filter_menu_buttons(chat_id)),
     )

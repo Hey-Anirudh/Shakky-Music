@@ -1,5 +1,6 @@
 from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardButton, InlineKeyboardMarkup
+from pyrogram.enums import ParseMode
 
 from shakky import app
 from shakky.misc import SUDOERS
@@ -28,7 +29,7 @@ async def autodj_command(client, message: Message, _, chat_id):
                 "✧ <b>Status:</b> <code>Enabled</code>\n\n"
                 "<i>When the queue empties, I'll automatically\n"
                 "play a related track to keep the vibe alive.</i>",
-                parse_mode="html",
+                parse_mode=ParseMode.HTML,
             )
         elif arg in ("off", "disable", "no"):
             await autodj_off(chat_id)
@@ -37,7 +38,7 @@ async def autodj_command(client, message: Message, _, chat_id):
                 "━━━━━━━━━━━━━━━━━━\n"
                 "✧ <b>Status:</b> <code>Disabled</code>\n\n"
                 "<i>Playback will stop when the queue is empty.</i>",
-                parse_mode="html",
+                parse_mode=ParseMode.HTML,
             )
 
     # No argument — show current status with toggle button
@@ -52,7 +53,7 @@ async def autodj_command(client, message: Message, _, chat_id):
         f"✧ <b>Status:</b> <code>{status}</code>\n\n"
         f"<i>When enabled, the bot uses AI to find a\n"
         f"related track when the queue runs out.</i>",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton(text=toggle_text, callback_data=toggle_data)],
@@ -102,7 +103,7 @@ async def autodj_toggle_callback(client, callback):
         f"✧ <b>By:</b> {mention}\n\n"
         f"<i>When enabled, the bot uses AI to find a\n"
         f"related track when the queue runs out.</i>",
-        parse_mode="html",
+        parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             [
                 [InlineKeyboardButton(text=toggle_text, callback_data=toggle_data)],
