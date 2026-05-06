@@ -762,10 +762,16 @@ class Call(PyTgCalls):
                 # Start new DJ timer if enabled
                 if await is_prodj(chat_id):
                     async def dj_wait():
-                        await asyncio.sleep(40) # 40 seconds cut
-                        LOGGER.info(f"[Pro-DJ] Transitioning after 40s in {chat_id}")
-                        # Fire and forget skip
-                        asyncio.create_task(self._autodj_next(chat_id))
+                        # 1. At 20 seconds, start pre-fetching the next vibe
+                        await asyncio.sleep(20)
+                        LOGGER.info(f"[Pro-DJ] Pre-fetching next vibe for {chat_id}...")
+                        # Fire and forget the recommendation (adds to queue)
+                        asyncio.create_task(self._autodj_next(chat_id, prefetch=True))
+                        
+                        # 2. At 40 seconds, perform the instant switch
+                        await asyncio.sleep(20) 
+                        LOGGER.info(f"[Pro-DJ] Performing instant transition in {chat_id}")
+                        await self.skip_stream(chat_id)
                     
                     self.dj_timer[chat_id] = asyncio.create_task(dj_wait())
 
@@ -815,7 +821,7 @@ class Call(PyTgCalls):
             # --- Pre-download next track in queue (background) ---
             asyncio.create_task(self._predownload_next(chat_id))
 
-    async def _autodj_next(self, chat_id):
+    async def _autodj_next(self, chat_id, prefetch: bool = False):
         """Find and play a related track when the queue is empty (Smart Auto-DJ)."""
         from shakky.misc import last_played
         from shakky.utils.stream.recommend_logic import start_ai_recommendation
@@ -823,18 +829,21 @@ class Call(PyTgCalls):
         last_song = last_played.get(chat_id)
         if not last_song:
             # Fallback if no last_played context
-            try:
-                await app.send_message(chat_id, text="✨ **Smart Auto-DJ:** Queue is empty and no playback context found. Stopping.")
-            except: pass
-            return await self.stop_stream(chat_id)
+            if not prefetch:
+                try:
+                    await app.send_message(chat_id, text="✨ **Smart Auto-DJ:** Queue is empty and no playback context found. Stopping.")
+                except: pass
+                return await self.stop_stream(chat_id)
+            return
             
         try:
             # Re-use the existing AI recommendation logic
-            # This will search, download, and call stream() which adds to queue and starts playback
+            # Passing prefetch ensures it doesn't try to force-start if we just want to queue it
             await start_ai_recommendation(chat_id, user_name="Smart Auto-DJ")
         except Exception as e:
-            LOGGER.error(f"Auto-DJ failed for {chat_id}: {e}")
-            await self.stop_stream(chat_id)
+            if not prefetch:
+                LOGGER.error(f"Auto-DJ failed for {chat_id}: {e}")
+                await self.stop_stream(chat_id)
 
     async def _notify_webapp_safe(self, chat_id):
         """Fire-and-forget webapp notification."""
