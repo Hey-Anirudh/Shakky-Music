@@ -442,64 +442,26 @@ class Call(PyTgCalls):
                 except Exception as me_err:
                     LOGGER.error(f"[join_call] Failed to get_me for assistant: {me_err}")
 
+            # --- Assistant Identity Logging ---
             assistant_id = userbot.me.id
             assistant_mention = userbot.me.mention
+            LOGGER.info(f"[join_call] Using Assistant {assistant_id} (@{userbot.me.username}) for Chat {chat_id}")
             
             try:
                 member = await app.get_chat_member(chat_id, assistant_id)
                 if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.warning(f"Assistant {assistant_id} reported as banned/kicked in {chat_id}. Attempting to unban and proceed anyway...")
-                    try:
-                        await app.unban_chat_member(chat_id, assistant_id)
-                        LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
-                    except Exception as e:
-                        LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
-                    # 🚀 Force-Proceed: Don't raise AssistantErr. Let the joining logic try its best.
-            except UserNotParticipant:
-                LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
-                try:
-                    await app.add_chat_members(chat_id, assistant_id)
-                    LOGGER.info(f"Added Assistant {assistant_id} to {chat_id}")
-                except Exception as e:
-                    LOGGER.warning(f"Failed to add Assistant via bot: {e}. Trying via invite link...")
-                    try:
-                        chat = await app.get_chat(chat_id)
-                        invitelink = chat.invite_link
-                        if not invitelink:
-                            try:
-                                invitelink = await app.export_chat_invite_link(chat_id)
-                            except:
-                                pass
-                        
-                        if invitelink:
-                            await userbot.join_chat(invitelink)
-                            LOGGER.info(f"Assistant {assistant_id} joined via invite link.")
-                        else:
-                            raise AssistantErr(f"➲ **Assistant is not in this chat and I cannot add it.**\n\n**Please add {assistant_mention} manually and try again.**")
-                    except Exception as join_err:
-                         LOGGER.error(f"Join via invite link failed: {join_err}")
-                         raise AssistantErr(f"➲ **Assistant is not in this chat.**\n\n**Please add {assistant_mention} manually and try again.**")
+                    LOGGER.warning(f"Assistant {assistant_id} is reported as banned/kicked. Attempting unban and proceeding anyway...")
+                    try: await app.unban_chat_member(chat_id, assistant_id)
+                    except: pass
             except Exception as e:
-                # If we get a "KICKED" error here, it means we can't even check status. Try unbanning as last resort.
-                if "KICKED" in str(e).upper():
-                    LOGGER.warning(f"Assistant {assistant_id} check failed with KICKED. Trying emergency unban...")
-                    try:
-                        await app.unban_chat_member(chat_id, assistant_id)
-                        # After unban, try to add
-                        try:
-                            await app.add_chat_members(chat_id, assistant_id)
-                        except:
-                            pass
-                    except:
-                        pass
-                else:
-                    LOGGER.error(f"Membership check for Assistant failed: {e}")
-                # 🚀 Resilience: Don't raise or stop. Proceed and let pytgcalls attempt the join.
-                # If the assistant is already there, it will work regardless of the status check failure.
+                # If we can't check membership, just log it. We'll try to join anyway.
+                LOGGER.warning(f"Could not verify membership for Assistant {assistant_id}: {e}")
+            
+            # 🚀 Force-Proceed: Don't raise. Let pytgcalls handle the actual join.
         except AssistantErr:
             raise
         except Exception as e:
-            LOGGER.error(f"Error while ensuring assistant is in group: {e}")
+            LOGGER.error(f"Pre-join check failed for assistant: {e}")
 
         await refresh_vc_state()
 
