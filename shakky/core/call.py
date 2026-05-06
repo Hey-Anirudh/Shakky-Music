@@ -130,9 +130,14 @@ except ImportError:
         pulse = "pulse"
 
 # Ensure types
-if "StreamAudioEnded" not in globals(): class StreamAudioEnded: pass
-if "Update" not in globals(): class Update: pass
-if "StreamType" not in globals(): class StreamType: pulse = "pulse"; pulse_stream = "pulse"
+if "StreamAudioEnded" not in globals():
+    class StreamAudioEnded: pass
+if "Update" not in globals():
+    class Update: pass
+if "StreamType" not in globals():
+    class StreamType:
+        pulse = "pulse"
+        pulse_stream = "pulse"
 
 import config
 from shakky import YouTube, app
