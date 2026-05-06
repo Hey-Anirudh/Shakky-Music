@@ -256,16 +256,21 @@ class Call(PyTgCalls):
     async def _refresh_vc_state(self, userbot, chat_id: int):
         """Refresh the VC metadata cache so pytgcalls can see the active group call."""
         if not userbot:
+            LOGGER.warning(f"[_refresh_vc_state] No userbot provided, skipping")
             return
+        LOGGER.info(f"[_refresh_vc_state] Refreshing VC state for {chat_id}...")
         try:
-            chat = await userbot.get_chat(chat_id)
+            chat = await asyncio.wait_for(userbot.get_chat(chat_id), timeout=10)
             if chat.type in (ChatType.CHANNEL, ChatType.SUPERGROUP):
                 from pyrogram.raw.functions.channels import GetFullChannel
-                peer = await userbot.resolve_peer(chat_id)
-                await userbot.invoke(GetFullChannel(channel=peer))
+                peer = await asyncio.wait_for(userbot.resolve_peer(chat_id), timeout=10)
+                await asyncio.wait_for(userbot.invoke(GetFullChannel(channel=peer)), timeout=10)
             else:
                 from pyrogram.raw.functions.messages import GetFullChat
-                await userbot.invoke(GetFullChat(chat_id=chat_id))
+                await asyncio.wait_for(userbot.invoke(GetFullChat(chat_id=chat_id)), timeout=10)
+            LOGGER.info(f"[_refresh_vc_state] Done for {chat_id}")
+        except asyncio.TimeoutError:
+            LOGGER.warning(f"[_refresh_vc_state] Timed out for {chat_id}")
         except Exception as e:
             LOGGER.warning(f"[_refresh_vc_state] Failed for {chat_id}: {e}")
 
@@ -540,9 +545,11 @@ class Call(PyTgCalls):
             )
 
         # --- Step 2: Refresh VC metadata cache ---
+        LOGGER.info(f"[join_call] Step 2: Refreshing VC state for {chat_id}...")
         await self._refresh_vc_state(userbot, chat_id)
 
         # --- Step 3: Join the Voice Chat ---
+        LOGGER.info(f"[join_call] Step 3: Attempting to join VC for {chat_id}...")
         joined = False
         last_err = None
 
@@ -553,6 +560,7 @@ class Call(PyTgCalls):
                     await self._refresh_vc_state(userbot, chat_id)
                     await asyncio.sleep(1)
 
+                LOGGER.info(f"[join_call] Calling join_group_call (attempt {attempt}) for {chat_id}...")
                 await assistant.join_group_call(
                     chat_id,
                     stream,
@@ -562,15 +570,21 @@ class Call(PyTgCalls):
                 LOGGER.info(f"[join_call] Successfully joined VC in {chat_id}")
                 break
             except AlreadyJoinedError:
+                LOGGER.info(f"[join_call] AlreadyJoinedError for {chat_id}, treating as success")
                 joined = True
                 break
             except NoActiveGroupCall:
                 last_err = "No active voice chat found. Please start a voice chat first."
-                LOGGER.warning(f"[join_call] No active group call in {chat_id}")
-                break  # No point retrying if VC isn't started
-            except Exception as e:
+                LOGGER.warning(f"[join_call] NoActiveGroupCall in {chat_id}")
+                break
+            except TelegramServerError as e:
                 last_err = e
-                LOGGER.warning(f"[join_call] Attempt {attempt} failed for {chat_id}: {e}")
+                LOGGER.warning(f"[join_call] TelegramServerError attempt {attempt} for {chat_id}: {e}")
+            except Exception as e:
+                import traceback
+                last_err = e
+                LOGGER.error(f"[join_call] Attempt {attempt} failed for {chat_id}: {type(e).__name__}: {e}")
+                LOGGER.error(f"[join_call] Full traceback:\n{traceback.format_exc()}")
 
         if not joined:
             LOGGER.error(f"[join_call] Failed to join VC in {chat_id}. Error: {last_err}")
