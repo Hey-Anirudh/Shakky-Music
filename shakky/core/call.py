@@ -296,7 +296,8 @@ class Call(PyTgCalls):
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         try:
-            await assistant.pause_stream(chat_id)
+            if not IS_LEGACY:
+                await assistant.pause_stream(chat_id)
         except Exception as e:
             LOGGER.warning(f"PyTgCalls pause_stream failed (non-critical): {e}")
         try:
@@ -308,7 +309,8 @@ class Call(PyTgCalls):
     async def resume_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         try:
-            await assistant.resume_stream(chat_id)
+            if not IS_LEGACY:
+                await assistant.resume_stream(chat_id)
         except Exception as e:
             LOGGER.warning(f"PyTgCalls resume_stream failed (non-critical): {e}")
         try:
@@ -321,7 +323,10 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         try:
             await _clear_(chat_id)
-            await assistant.leave_group_call(chat_id)
+            if IS_LEGACY:
+                await assistant.leave(chat_id)
+            else:
+                await assistant.leave_group_call(chat_id)
         except:
             pass
         try:
@@ -578,7 +583,10 @@ class Call(PyTgCalls):
         # 🔄 Clean slate attempt: Leave first to clear any ghost sessions
         try:
             LOGGER.info(f"[join_call] Pre-join: Attempting to leave ghost session for {chat_id}...")
-            await assistant.leave_group_call(chat_id)
+            if IS_LEGACY:
+                await assistant.leave(chat_id)
+            else:
+                await assistant.leave_group_call(chat_id)
             await asyncio.sleep(1)
         except:
             pass
@@ -1167,16 +1175,14 @@ class Call(PyTgCalls):
     async def stop(self):
         LOGGER.info("Stopping PyTgCalls Clients...")
         try:
-            if config.STRING1:
-                await self.one.stop()
-            if config.STRING2 and self.two:
-                await self.two.stop()
-            if config.STRING3 and self.three:
-                await self.three.stop()
-            if config.STRING4 and self.four:
-                await self.four.stop()
-            if config.STRING5 and self.five:
-                await self.five.stop()
+            for ass in [self.one, self.two, self.three, self.four, self.five]:
+                if not ass: continue
+                if IS_LEGACY:
+                    # In legacy, you might need to call leave_all or just stop
+                    try: await ass.stop()
+                    except: pass
+                else:
+                    await ass.stop()
             LOGGER.info("PyTgCalls Clients stopped.")
         except Exception as e:
             LOGGER.warning(f"Error while stopping PyTgCalls: {e}")
