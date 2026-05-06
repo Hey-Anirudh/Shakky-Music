@@ -291,6 +291,37 @@ class Call:
         await music_on(chat_id)
         if video: await add_active_video_chat(chat_id)
 
+    async def apply_audio_filter(self, chat_id: int, filter_key: str, playing: list):
+        """Applies a specific audio filter in real-time by re-syncing the stream."""
+        if not playing: return
+        
+        # 1. Update active effect state
+        if filter_key:
+            from shakky.plugins.admins.filters import AUDIO_FILTERS
+            self._active_effects[chat_id] = {"af": AUDIO_FILTERS[filter_key]["ffmpeg"]}
+        else:
+            self._active_effects.pop(chat_id, None)
+
+        # 2. Calculate current seek position
+        track = playing[0]
+        start_time = track.get("start_time", time.time())
+        current_pos = int(time.time() - start_time)
+        if current_pos < 0: current_pos = 0
+        
+        # 3. Build new stream with seek and filter
+        payload = {"ss": current_pos}
+        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0))
+        
+        # 4. Apply to assistant
+        ass = await group_assistant(self, chat_id)
+        if IS_LEGACY:
+             # FIFO will handle the new command string
+             await ass.change_stream(chat_id, stream)
+        else:
+             await ass.change_stream(chat_id, stream)
+             await asyncio.sleep(0.5)
+             await ass.resume_stream(chat_id)
+
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
         lock = self.get_lock(chat_id)
         async with lock:

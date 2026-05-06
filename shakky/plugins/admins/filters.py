@@ -17,7 +17,7 @@ from config import BANNED_USERS, adminlist
 
 # ─── Active Filters State ───────────────────────────────────
 # Tracks the currently active filter per chat: {chat_id: "filter_name" or None}
-active_filters = {}
+# Now synced with Nand._active_effects
 
 # ─── FFmpeg Filter Definitions ──────────────────────────────
 AUDIO_FILTERS = {
@@ -43,10 +43,18 @@ AUDIO_FILTERS = {
     },
 }
 
+def get_active_filter(chat_id):
+    """Helper to get the current filter key from Nand state."""
+    if chat_id in Nand._active_effects:
+        current_af = Nand._active_effects[chat_id].get("af")
+        for k, v in AUDIO_FILTERS.items():
+            if v["ffmpeg"] == current_af:
+                return k
+    return None
 
 def _filter_menu_buttons(chat_id):
     """Build the inline keyboard for the Filters sub-menu."""
-    current = active_filters.get(chat_id)
+    current = get_active_filter(chat_id)
     rows = []
     for key, fdata in AUDIO_FILTERS.items():
         indicator = " ✓" if current == key else ""
@@ -89,7 +97,7 @@ async def filters_command(client, message: Message, _, chat_id):
             parse_mode=ParseMode.HTML,
         )
 
-    current = active_filters.get(chat_id)
+    current = get_active_filter(chat_id)
     status_text = (
         f"Active: <b>{AUDIO_FILTERS[current]['label']}</b>"
         if current and current in AUDIO_FILTERS
@@ -132,15 +140,15 @@ async def apply_filter_callback(client, callback: CallbackQuery):
         return await callback.answer("➲ Queue is empty.", show_alert=True)
 
     mention = callback.from_user.mention
+    current_filter = get_active_filter(chat_id)
 
     if filter_key == "reset":
-        if not active_filters.get(chat_id):
+        if not current_filter:
             return await callback.answer("No filter is active.", show_alert=False)
 
         await callback.answer("⏻ Resetting to original...")
         try:
             await Nand.apply_audio_filter(chat_id, None, playing)
-            active_filters.pop(chat_id, None)
         except Exception as e:
             return await callback.answer(f"Error: {e}", show_alert=True)
 
@@ -163,11 +171,10 @@ async def apply_filter_callback(client, callback: CallbackQuery):
     fdata = AUDIO_FILTERS[filter_key]
 
     # If already active, deactivate
-    if active_filters.get(chat_id) == filter_key:
+    if current_filter == filter_key:
         await callback.answer("⏻ Removing filter...")
         try:
             await Nand.apply_audio_filter(chat_id, None, playing)
-            active_filters.pop(chat_id, None)
         except Exception as e:
             return await callback.answer(f"Error: {e}", show_alert=True)
 
@@ -188,7 +195,6 @@ async def apply_filter_callback(client, callback: CallbackQuery):
     await callback.answer(f"Applying {fdata['label']}...")
     try:
         await Nand.apply_audio_filter(chat_id, filter_key, playing)
-        active_filters[chat_id] = filter_key
     except Exception as e:
         return await callback.answer(f"Error: {e}", show_alert=True)
 
@@ -220,7 +226,7 @@ async def filter_menu_callback(client, callback: CallbackQuery):
     if not playing:
         return await callback.answer("➲ Queue is empty.", show_alert=True)
 
-    current = active_filters.get(chat_id)
+    current = get_active_filter(chat_id)
     status_text = (
         f"Active: <b>{AUDIO_FILTERS[current]['label']}</b>"
         if current and current in AUDIO_FILTERS
