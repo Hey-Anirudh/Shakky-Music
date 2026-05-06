@@ -7,82 +7,48 @@ from typing import Union
 from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-import pytgcalls
+from pyrogram.types import InlineKeyboardMarkup
 # 🤖 Universal Core Switch (ARM VPS Fix)
 # This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
-IS_V3 = False
-IS_LEGACY = False
-
 try:
     # --- Modern Era (v1, v2, v3) ---
     from pytgcalls import PyTgCalls, StreamType
     from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
-    
-    # Check if this is ACTUALLY legacy (0.9.x often has PyTgCalls but not join_group_call)
-    if not hasattr(PyTgCalls, "join_group_call"):
-        raise ImportError("Legacy detected via missing join_group_call")
-        
+    # Event detection
     try:
-        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
+        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
         IS_V3 = True
     except ImportError:
-        # Fallback for earlier v1/v2
-        class StreamAudioEnded: pass
-        class StreamVideoEnded: pass
-        class StreamDeleted: pass
+        IS_V3 = False
+    IS_LEGACY = False
 except ImportError:
-    # --- Legacy Era (v0.9.x) ---
-    IS_LEGACY = True
+    # --- Legacy Era (v0) ---
     try:
         from pytgcalls import GroupCallFactory
-        class PyTgCalls:
-            def __init__(self, client, **kwargs):
-                self._factory = GroupCallFactory(client)
-                self._call = self._factory.get_group_call()
-                self.start = self._call.start
-                self.stop = self._call.stop
-                self.join = self._call.join
-                self.leave = self._call.leave
-                self.start_audio = self._call.start_audio
-                # Add other methods as needed
-            def __getattr__(self, name):
-                return getattr(self._call, name)
+        from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+        PyTgCalls = GroupCallFactory # Map for compatibility
+        IS_LEGACY = True
+        IS_V3 = False
+        # Legacy dummies
+        class HighQualityAudio: pass
+        class MediumQualityVideo: pass
     except ImportError:
+        # Fallback for dev-specific paths
         try:
-            from pytgcalls import PyTgCalls
+            from pytgcalls.pytgcalls import PyTgCalls
+            from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+            IS_V3 = False
+            IS_LEGACY = False
+            # Qualities might still be missing in some dev builds
+            try:
+                from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
+            except ImportError:
+                class HighQualityAudio: pass
+                class MediumQualityVideo: pass
         except ImportError:
-            LOGGER.critical("No PyTgCalls found. Please install it.")
-            raise
-    # Legacy dummies/shims
-    class AudioPiped: 
-        def __init__(self, p, **kwargs): self.path = p
-    class AudioVideoPiped(AudioPiped): pass
-    class HighQualityAudio: pass
-    class MediumQualityVideo: pass
-    class Update: pass
-    class StreamAudioEnded: pass
-    class StreamVideoEnded: pass
-    class StreamDeleted: pass
-    class StreamType:
-        pulse_stream = "pulse"
-        pulse = "pulse"
-
-# Ensure all types are at least defined to prevent NameError
-if "StreamAudioEnded" not in globals():
-    class StreamAudioEnded: pass
-if "StreamVideoEnded" not in globals():
-    class StreamVideoEnded: pass
-if "StreamDeleted" not in globals():
-    class StreamDeleted: pass
-if "Update" not in globals():
-    class Update: pass
-if "StreamType" not in globals():
-    class StreamType:
-        pulse_stream = "pulse"
-        pulse = "pulse"
+            raise ImportError("Critical: No compatible PyTgCalls found. Run ./vps_fix.sh")
 
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
@@ -145,7 +111,6 @@ class Call(PyTgCalls):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
-            no_updates=True,
         )
         self.one = PyTgCalls(self.userbot1, cache_duration=100)
         
@@ -154,170 +119,44 @@ class Call(PyTgCalls):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING2),
-            no_updates=True,
-        ) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
+        )
+        self.two = PyTgCalls(self.userbot2, cache_duration=100)
         
         self.userbot3 = Client(
             name="Ass3",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING3),
-            no_updates=True,
-        ) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
+        )
+        self.three = PyTgCalls(self.userbot3, cache_duration=100)
         
         self.userbot4 = Client(
             name="Ass4",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING4),
-            no_updates=True,
-        ) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
+        )
+        self.four = PyTgCalls(self.userbot4, cache_duration=100)
         
         self.userbot5 = Client(
             name="Ass5",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING5),
-            no_updates=True,
-        ) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
+        )
+        self.five = PyTgCalls(self.userbot5, cache_duration=100)
         self._locks = {}
         self._last_skip = {}
-        self.dj_timer = {}
-        # Clean mapping: PyTgCalls instance -> Pyrogram Client
-        self._client_map = {
-            id(self.one): self.userbot1,
-            id(self.two): self.userbot2,
-            id(self.three): self.userbot3,
-            id(self.four): self.userbot4,
-            id(self.five): self.userbot5,
-        }
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks:
             self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
 
-    def _get_userbot(self, assistant) -> Client:
-        """Get the Pyrogram Client for a given PyTgCalls instance."""
-        return self._client_map.get(id(assistant))
-
-    async def _ensure_joined(self, chat_id: int, assistant) -> bool:
-        """Ensure the assistant userbot is a member of the chat.
-        Returns True if the assistant is confirmed in the chat.
-        """
-        userbot = self._get_userbot(assistant)
-        if not userbot:
-            LOGGER.error(f"[_ensure_joined] No userbot found for assistant")
-            return False
-
-        # Make sure we know our own ID
-        if not userbot.me:
-            try:
-                await userbot.get_me()
-            except Exception:
-                try:
-                    await userbot.start()
-                    await userbot.get_me()
-                except Exception as e:
-                    LOGGER.error(f"[_ensure_joined] Cannot start userbot: {e}")
-                    return False
-
-        assistant_id = userbot.me.id
-        LOGGER.info(f"[_ensure_joined] Checking Assistant {assistant_id} in chat {chat_id}")
-
-        # Step 1: Check if already a member
-        try:
-            member = await app.get_chat_member(chat_id, assistant_id)
-            if member.status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
-                LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} already in chat {chat_id}")
-                return True
-            elif member.status == ChatMemberStatus.BANNED:
-                LOGGER.warning(f"[_ensure_joined] Assistant {assistant_id} is BANNED in {chat_id}, unbanning...")
-                try:
-                    await app.unban_chat_member(chat_id, assistant_id)
-                    await asyncio.sleep(1)
-                except Exception as e:
-                    LOGGER.error(f"[_ensure_joined] Unban failed: {e}")
-                    return False
-        except UserNotParticipant:
-            LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} not in chat {chat_id}, will join")
-        except Exception as e:
-            LOGGER.warning(f"[_ensure_joined] Membership check failed: {e}")
-
-        # Step 2: Join via invite link
-        try:
-            chat = await app.get_chat(chat_id)
-            invite_link = chat.invite_link
-            if not invite_link:
-                try:
-                    invite_link = await app.export_chat_invite_link(chat_id)
-                except Exception as e:
-                    LOGGER.warning(f"[_ensure_joined] Cannot export invite link: {e}")
-            if invite_link:
-                LOGGER.info(f"[_ensure_joined] Joining via invite link...")
-                await userbot.join_chat(invite_link)
-                await asyncio.sleep(1)
-                LOGGER.info(f"[_ensure_joined] Assistant {assistant_id} joined chat {chat_id} successfully")
-                return True
-            else:
-                LOGGER.error(f"[_ensure_joined] No invite link available for {chat_id}")
-        except Exception as e:
-            err = str(e).lower()
-            if "already" in err or "user_already_participant" in err:
-                LOGGER.info(f"[_ensure_joined] Assistant already a participant (from join_chat)")
-                return True
-            LOGGER.error(f"[_ensure_joined] join_chat failed: {e}")
-
-        # Step 3: Try adding directly via bot
-        try:
-            await app.add_chat_members(chat_id, assistant_id)
-            await asyncio.sleep(1)
-            LOGGER.info(f"[_ensure_joined] Added assistant via add_chat_members")
-            return True
-        except Exception as e:
-            LOGGER.warning(f"[_ensure_joined] add_chat_members failed: {e}")
-
-        # Final check: maybe one of the methods worked despite throwing
-        try:
-            member = await app.get_chat_member(chat_id, assistant_id)
-            if member.status not in (ChatMemberStatus.BANNED, ChatMemberStatus.LEFT):
-                return True
-        except:
-            pass
-
-        LOGGER.error(f"[_ensure_joined] ALL methods failed for Assistant {assistant_id} in chat {chat_id}")
-        return False
-
-    async def _refresh_vc_state(self, userbot, chat_id: int):
-        """Refresh the VC metadata cache so pytgcalls can see the active group call."""
-        if not userbot:
-            LOGGER.warning(f"[_refresh_vc_state] No userbot provided, skipping")
-            return
-        LOGGER.info(f"[_refresh_vc_state] Refreshing VC state for {chat_id}...")
-        try:
-            chat = await asyncio.wait_for(userbot.get_chat(chat_id), timeout=10)
-            if chat.type in (ChatType.CHANNEL, ChatType.SUPERGROUP):
-                from pyrogram.raw.functions.channels import GetFullChannel
-                peer = await asyncio.wait_for(userbot.resolve_peer(chat_id), timeout=10)
-                await asyncio.wait_for(userbot.invoke(GetFullChannel(channel=peer)), timeout=10)
-            else:
-                from pyrogram.raw.functions.messages import GetFullChat
-                await asyncio.wait_for(userbot.invoke(GetFullChat(chat_id=chat_id)), timeout=10)
-            LOGGER.info(f"[_refresh_vc_state] Done for {chat_id}")
-        except asyncio.TimeoutError:
-            LOGGER.warning(f"[_refresh_vc_state] Timed out for {chat_id}")
-        except Exception as e:
-            LOGGER.warning(f"[_refresh_vc_state] Failed for {chat_id}: {e}")
-
     async def pause_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         try:
-            if not IS_LEGACY:
-                await assistant.pause_stream(chat_id)
+            await assistant.pause_stream(chat_id)
         except Exception as e:
             LOGGER.warning(f"PyTgCalls pause_stream failed (non-critical): {e}")
         try:
@@ -329,8 +168,7 @@ class Call(PyTgCalls):
     async def resume_stream(self, chat_id: int):
         assistant = await group_assistant(self, chat_id)
         try:
-            if not IS_LEGACY:
-                await assistant.resume_stream(chat_id)
+            await assistant.resume_stream(chat_id)
         except Exception as e:
             LOGGER.warning(f"PyTgCalls resume_stream failed (non-critical): {e}")
         try:
@@ -343,10 +181,7 @@ class Call(PyTgCalls):
         assistant = await group_assistant(self, chat_id)
         try:
             await _clear_(chat_id)
-            if IS_LEGACY:
-                await assistant.leave(chat_id)
-            else:
-                await assistant.leave_group_call(chat_id)
+            await assistant.leave_group_call(chat_id)
         except:
             pass
         try:
@@ -550,132 +385,161 @@ class Call(PyTgCalls):
         link,
         video: Union[bool, str] = None,
         image: Union[bool, str] = None,
-        **kwargs,
     ):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
-
-        payload = kwargs.get("payload") or {}
-        af = payload.get("af", "")
-        ff_params = f"-af {af}" if af else None
-
         if video:
             stream = AudioVideoPiped(
                 link,
                 audio_parameters=HighQualityAudio(),
                 video_parameters=MediumQualityVideo(),
-                additional_ffmpeg_parameters=ff_params
             )
         else:
-            stream = AudioPiped(
-                link,
-                audio_parameters=HighQualityAudio(),
-                additional_ffmpeg_parameters=ff_params
+            stream = (
+                AudioVideoPiped(
+                    link,
+                    audio_parameters=HighQualityAudio(),
+                    video_parameters=MediumQualityVideo(),
+                )
+                if video
+                else AudioPiped(link, audio_parameters=HighQualityAudio())
             )
+        # --- JIT Assistant Metadata Sync ---
+        userbot = None
+        if assistant == self.one: userbot = self.userbot1
+        elif assistant == self.two: userbot = self.userbot2
+        elif assistant == self.three: userbot = self.userbot3
+        elif assistant == self.four: userbot = self.userbot4
+        elif assistant == self.five: userbot = self.userbot5
 
-        userbot = self._get_userbot(assistant)
+        async def refresh_vc_state():
+            if not userbot: return
+            try:
+                # get_chat is more robust than resolve_peer for populating local cache
+                chat = await userbot.get_chat(chat_id)
+                # If it's a channel, we need the FullChannel info for VC detection
+                if chat.type in [ChatType.CHANNEL, ChatType.SUPERGROUP]:
+                    from pyrogram.raw.functions.channels import GetFullChannel
+                    peer = await userbot.resolve_peer(chat_id)
+                    await userbot.invoke(GetFullChannel(channel=peer))
+                else:
+                    from pyrogram.raw.functions.messages import GetFullChat
+                    await userbot.invoke(GetFullChat(chat_id=chat_id))
+            except Exception as e:
+                LOGGER.warning(f"[join_call] VC state sync failed for {chat_id}: {e}")
 
-        # --- Step 1: Ensure assistant is a MEMBER of the chat ---
-        LOGGER.info(f"[join_call] Step 1: Ensuring Assistant membership for {chat_id}...")
-        is_member = await asyncio.wait_for(self._ensure_joined(chat_id, assistant), timeout=30)
-        LOGGER.info(f"[join_call] Step 1 complete. is_member={is_member}")
-        
-        if not is_member:
-            LOGGER.error(f"[join_call] Assistant could not join chat {chat_id}. Raising error.")
-            raise AssistantErr(
-                "➲ **Assistant could not join the chat.**\n"
-                "Please make sure:\n"
-                "• The bot is admin with invite permissions\n"
-                "• The assistant is not banned\n"
-                "• The group allows adding members"
-            )
+        # --- Assistant Membership & Ban Handling ---
+        try:
+            if not userbot.me:
+                try:
+                    await userbot.get_me()
+                except Exception as me_err:
+                    LOGGER.error(f"[join_call] Failed to get_me for assistant: {me_err}")
 
-        # --- Step 2: Refresh VC metadata cache ---
-        LOGGER.info(f"[join_call] Step 2: Refreshing VC state for {chat_id}...")
-        await self._refresh_vc_state(userbot, chat_id)
+            assistant_id = userbot.me.id
+            assistant_mention = userbot.me.mention
+            
+            try:
+                member = await app.get_chat_member(chat_id, assistant_id)
+                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
+                    LOGGER.info(f"Assistant {assistant_id} is banned/kicked in {chat_id}. Attempting to unban...")
+                    try:
+                        await app.unban_chat_member(chat_id, assistant_id)
+                        LOGGER.info(f"Unbanned Assistant {assistant_id} in {chat_id}")
+                    except Exception as e:
+                        LOGGER.error(f"Unban failed for Assistant {assistant_id}: {e}")
+                        raise AssistantErr(f"➲ **Assistant is kicked/banned in this chat.**\n\n**Please UNBAN {assistant_mention} manually and try again.**")
+            except UserNotParticipant:
+                LOGGER.info(f"Assistant {assistant_id} is not in chat {chat_id}. Attempting to add...")
+                try:
+                    await app.add_chat_members(chat_id, assistant_id)
+                    LOGGER.info(f"Added Assistant {assistant_id} to {chat_id}")
+                except Exception as e:
+                    LOGGER.warning(f"Failed to add Assistant via bot: {e}. Trying via invite link...")
+                    try:
+                        chat = await app.get_chat(chat_id)
+                        invitelink = chat.invite_link
+                        if not invitelink:
+                            try:
+                                invitelink = await app.export_chat_invite_link(chat_id)
+                            except:
+                                pass
+                        
+                        if invitelink:
+                            await userbot.join_chat(invitelink)
+                            LOGGER.info(f"Assistant {assistant_id} joined via invite link.")
+                        else:
+                            raise AssistantErr(f"➲ **Assistant is not in this chat and I cannot add it.**\n\n**Please add {assistant_mention} manually and try again.**")
+                    except Exception as join_err:
+                         LOGGER.error(f"Join via invite link failed: {join_err}")
+                         raise AssistantErr(f"➲ **Assistant is not in this chat.**\n\n**Please add {assistant_mention} manually and try again.**")
+            except Exception as e:
+                # If we get a "KICKED" error here, it means we can't even check status. Try unbanning as last resort.
+                if "KICKED" in str(e).upper():
+                    LOGGER.warning(f"Assistant {assistant_id} check failed with KICKED. Trying emergency unban...")
+                    try:
+                        await app.unban_chat_member(chat_id, assistant_id)
+                        # After unban, try to add
+                        try:
+                            await app.add_chat_members(chat_id, assistant_id)
+                        except:
+                            pass
+                    except:
+                        pass
+                LOGGER.error(f"Membership check for Assistant failed: {e}")
+                # Don't re-raise general exceptions yet, try to proceed and see if join_group_call works
+        except AssistantErr:
+            raise
+        except Exception as e:
+            LOGGER.error(f"Error while ensuring assistant is in group: {e}")
 
-        # --- Step 3: Join the Voice Chat ---
-        LOGGER.info(f"[join_call] Step 3: Attempting to join VC for {chat_id}...")
+        await refresh_vc_state()
+
+        # --- Joining Logic ---
         joined = False
         last_err = None
-
-        # 🔄 Clean slate attempt: Leave first to clear any ghost sessions
+        
         try:
-            LOGGER.info(f"[join_call] Pre-join: Attempting to leave ghost session for {chat_id}...")
-            if IS_LEGACY:
-                await assistant.leave(chat_id)
-            else:
-                await assistant.leave_group_call(chat_id)
+            await assistant.join_group_call(chat_id, stream)
+            joined = True
+        except AlreadyJoinedError:
+            joined = True
+        except NoActiveGroupCall as e:
+            last_err = e
+            LOGGER.warning(f"[join_call] NoActiveGroupCall. Refreshing...")
+            await refresh_vc_state()
             await asyncio.sleep(1)
-        except:
-            pass
-
-        for attempt in range(3):
             try:
-                if attempt > 0:
-                    LOGGER.info(f"[join_call] Retry attempt {attempt} for {chat_id}...")
-                    await self._refresh_vc_state(userbot, chat_id)
-                    await asyncio.sleep(1.5)
-
-                if IS_LEGACY:
-                    LOGGER.info(f"[join_call] Legacy Mode: Joining via join() and start_audio() for {chat_id}...")
-                    # 1. Join the chat
-                    try:
-                        await asyncio.wait_for(assistant.join(chat_id), timeout=20)
-                    except AlreadyJoinedError:
-                        pass
-                    except Exception as e:
-                        if "ALREADY_JOINED" in str(e): pass
-                        else: raise e
-                    
-                    # 2. Start the audio stream
-                    # In 0.9.x, link is usually the file path or a specific input stream
-                    audio_path = link if isinstance(link, str) else getattr(stream, 'path', link)
-                    await asyncio.wait_for(assistant.start_audio(audio_path), timeout=20)
-                    LOGGER.info(f"[join_call] Legacy SUCCESS for {chat_id}")
-                else:
-                    LOGGER.info(f"[join_call] Executing join_group_call (attempt {attempt}) for {chat_id}...")
-                    await asyncio.wait_for(
-                        assistant.join_group_call(
-                            chat_id,
-                            stream,
-                            stream_type=StreamType().pulse_stream,
-                        ),
-                        timeout=30
-                    )
+                await assistant.join_group_call(
+                    chat_id, stream, stream_type=StreamType().pulse_stream
+                )
                 joined = True
-                LOGGER.info(f"[join_call] SUCCESS: Joined VC in {chat_id}")
-                break
             except AlreadyJoinedError:
-                LOGGER.info(f"[join_call] AlreadyJoinedError for {chat_id}, checking stream...")
                 joined = True
-                break
-            except NoActiveGroupCall:
-                last_err = "No active voice chat found. Please start a voice chat first."
-                LOGGER.warning(f"[join_call] NoActiveGroupCall in {chat_id}")
-                break
-            except Exception as e:
-                import traceback
-                last_err = e
-                err_name = type(e).__name__
-                LOGGER.error(f"[join_call] Attempt {attempt} failed ({err_name}): {e}")
-                if "join_group_call" in str(e) and IS_LEGACY:
-                    LOGGER.warning("[join_call] Legacy assistant does not have join_group_call. Check detection.")
-                await asyncio.sleep(1)
+            except Exception as e2:
+                last_err = e2
+                LOGGER.warning(f"[join_call] pulse_stream failed after refresh: {e2}")
+        except Exception as e:
+            import traceback
+            err_full = traceback.format_exc()
+            last_err = e
+            LOGGER.error(f"[join_call] Unexpected error: {e}\n{err_full}")
 
         if not joined:
-            LOGGER.error(f"[join_call] Failed to join VC in {chat_id}. Error: {last_err}")
+            LOGGER.error(f"[join_call] Failed to join VC. Last error: {last_err}")
             try:
+                from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
                 webapp_url = f"{config.WEBAPP_URL}?room={chat_id}"
                 btn = InlineKeyboardMarkup([[InlineKeyboardButton("🎧 Open Web Player", url=webapp_url)]])
                 await app.send_message(
-                    original_chat_id,
-                    text=f"⚠️ **Could not join Voice Chat!**\n\n➲ **Reason:** `{str(last_err)[:100]}`\n➲ **Click below to listen via WebApp.**",
-                    reply_markup=btn,
+                    original_chat_id, 
+                    text="⚠️ **Voice Chat is not turned on!**\n\n➲ **I will continue playing the track in the WebApp.**\n➲ **Click the button below to listen live.**",
+                    reply_markup=btn
                 )
             except Exception as e:
                 LOGGER.error(f"Failed to send VC off warning: {e}")
+            # Continue without raising AssistantErr to allow WebApp playback
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
@@ -687,8 +551,7 @@ class Call(PyTgCalls):
                 users = len(await assistant.get_participants(chat_id))
                 if users == 1:
                     autoend[chat_id] = datetime.now() + timedelta(minutes=1)
-            except:
-                pass
+            except: pass
         
 
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
@@ -706,11 +569,6 @@ class Call(PyTgCalls):
 
             check = db.get(chat_id)
             if not check:
-                # --- Smart Auto-DJ Hook ---
-                from shakky.utils.database import is_autodj
-                if await is_autodj(chat_id):
-                    asyncio.create_task(self._autodj_next(chat_id))
-                    return
                 await _clear_(chat_id)
                 try:
                     return await client.leave_group_call(chat_id)
@@ -731,11 +589,6 @@ class Call(PyTgCalls):
                         await auto_clean(popped)
                     
                     if not check:
-                        # --- Smart Auto-DJ Hook ---
-                        from shakky.utils.database import is_autodj
-                        if await is_autodj(chat_id):
-                            asyncio.create_task(self._autodj_next(chat_id))
-                            return
                         await _clear_(chat_id)
                         try:
                             return await client.leave_group_call(chat_id)
@@ -755,11 +608,6 @@ class Call(PyTgCalls):
             title = (check[0]["title"]).title()
             user = check[0]["by"]
             original_chat_id = check[0]["chat_id"]
-
-            # --- Update Last Played Context for AI Recommendations ---
-            from shakky.misc import last_played
-            last_played[chat_id] = title
-            
             streamtype = check[0]["streamtype"]
             videoid = check[0]["vidid"]
             
@@ -889,35 +737,6 @@ class Call(PyTgCalls):
             try:
                 db[chat_id][0]["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
-
-                # --- Pro-DJ Mode Logic ---
-                from shakky.utils.database import is_prodj
-                
-                # Cancel existing DJ timer
-                if chat_id in self.dj_timer:
-                    try:
-                        self.dj_timer[chat_id].cancel()
-                        del self.dj_timer[chat_id]
-                    except: pass
-                
-                # Start new DJ timer if enabled
-                if await is_prodj(chat_id):
-                    async def dj_wait():
-                        # 1. At 20 seconds, start pre-fetching the next vibe
-                        await asyncio.sleep(20)
-                        LOGGER.info(f"[Pro-DJ] Pre-fetching next vibe for {chat_id}...")
-                        # Fire and forget the recommendation (adds to queue)
-                        asyncio.create_task(self._autodj_next(chat_id, prefetch=True))
-                        
-                        # 2. At 40 seconds, perform the instant switch
-                        await asyncio.sleep(20) 
-                        LOGGER.info(f"[Pro-DJ] Performing instant transition in {chat_id}")
-                        # Use the correct assistant client for the skip
-                        assistant = await group_assistant(self, chat_id)
-                        await self.change_stream(assistant, chat_id)
-                    
-                    self.dj_timer[chat_id] = asyncio.create_task(dj_wait())
-
             except Exception as e:
                 import traceback
                 err_msg = str(e)
@@ -963,30 +782,6 @@ class Call(PyTgCalls):
 
             # --- Pre-download next track in queue (background) ---
             asyncio.create_task(self._predownload_next(chat_id))
-
-    async def _autodj_next(self, chat_id, prefetch: bool = False):
-        """Find and play a related track when the queue is empty (Smart Auto-DJ)."""
-        from shakky.misc import last_played
-        from shakky.utils.stream.recommend_logic import start_ai_recommendation
-        
-        last_song = last_played.get(chat_id)
-        if not last_song:
-            # Fallback if no last_played context
-            if not prefetch:
-                try:
-                    await app.send_message(chat_id, text="✨ **Smart Auto-DJ:** Queue is empty and no playback context found. Stopping.")
-                except: pass
-                return await self.stop_stream(chat_id)
-            return
-            
-        try:
-            # Re-use the existing AI recommendation logic
-            # Passing prefetch as silent ensures it doesn't try to force-start if we just want to queue it
-            await start_ai_recommendation(chat_id, user_name="Smart Auto-DJ", silent=prefetch)
-        except Exception as e:
-            if not prefetch:
-                LOGGER.error(f"Auto-DJ failed for {chat_id}: {e}")
-                await self.stop_stream(chat_id)
 
     async def _notify_webapp_safe(self, chat_id):
         """Fire-and-forget webapp notification."""
@@ -1077,107 +872,6 @@ class Call(PyTgCalls):
         except Exception as e:
             LOGGER.debug(f"Pre-download failed (non-critical): {e}")
 
-    async def apply_audio_filter(self, chat_id: int, filter_key, playing):
-        """Apply a spatial audio filter to the current stream, or reset to original.
-
-        Args:
-            chat_id: The chat to apply the filter in.
-            filter_key: One of 'bass_boost', '8d_audio', 'nightcore', 'slowed_reverb', or None to reset.
-            playing: The current db[chat_id] list.
-        """
-        from shakky.plugins.admins.filters import AUDIO_FILTERS
-
-        assistant = await group_assistant(self, chat_id)
-        current = playing[0]
-
-        # Resolve the *original* file path (before any speed/filter modifications)
-        original_file = current.get("original_file") or current.get("file")
-        if not original_file or not os.path.exists(original_file):
-            raise AssistantErr("➲ **Cannot apply filter — original file not found.**")
-
-        # Store the original file reference if not already saved
-        if not current.get("original_file"):
-            db[chat_id][0]["original_file"] = original_file
-
-        # Calculate current playback position
-        start_time = current.get("start_time", time.time())
-        played_seconds = int(time.time() - start_time)
-        total_seconds = current.get("seconds", 0)
-        if played_seconds < 0:
-            played_seconds = 0
-        if total_seconds > 0 and played_seconds > total_seconds:
-            played_seconds = total_seconds
-
-        if filter_key is None:
-            # Reset to original
-            out = original_file
-            db[chat_id][0]["active_filter"] = None
-        else:
-            if filter_key not in AUDIO_FILTERS:
-                raise AssistantErr("➲ **Unknown filter.**")
-
-            ffmpeg_filter = AUDIO_FILTERS[filter_key]["ffmpeg"]
-
-            # Build cached output path: playback/filters/<filter_key>/<filename>
-            base = os.path.basename(original_file)
-            filter_dir = os.path.join(os.getcwd(), "playback", "filters", filter_key)
-            if not os.path.isdir(filter_dir):
-                os.makedirs(filter_dir)
-            out = os.path.join(filter_dir, base)
-
-            if not os.path.isfile(out):
-                LOGGER.info(f"[filter] Rendering {filter_key} for {base}...")
-                proc = await asyncio.create_subprocess_shell(
-                    cmd=(
-                        f'ffmpeg -y -i "{original_file}" '
-                        f'-af "{ffmpeg_filter}" '
-                        f'-c:v copy '
-                        f'"{out}"'
-                    ),
-                    stdin=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=120)
-                if proc.returncode != 0:
-                    LOGGER.error(f"[filter] FFmpeg error: {stderr.decode()[:300]}")
-                    raise AssistantErr("➲ **FFmpeg failed to process filter.**")
-                LOGGER.info(f"[filter] Rendered: {out}")
-
-            db[chat_id][0]["active_filter"] = filter_key
-
-        # Recalculate duration of filtered file
-        dur = await asyncio.get_event_loop().run_in_executor(None, check_duration, out)
-        dur = int(dur)
-        duration_str = seconds_to_min(dur)
-
-        # Build the new stream object, seeking to current position
-        streamtype = current.get("streamtype", "audio")
-        if streamtype == "video":
-            stream = AudioVideoPiped(
-                out,
-                audio_parameters=HighQualityAudio(),
-                video_parameters=MediumQualityVideo(),
-                additional_ffmpeg_parameters=f"-ss {played_seconds} -to {duration_str}",
-            )
-        else:
-            stream = AudioPiped(
-                out,
-                audio_parameters=HighQualityAudio(),
-                additional_ffmpeg_parameters=f"-ss {played_seconds} -to {duration_str}",
-            )
-
-        try:
-            await assistant.change_stream(chat_id, stream)
-        except Exception as e:
-            LOGGER.error(f"[filter] change_stream failed: {e}")
-            raise AssistantErr(f"➲ **Failed to swap stream:** `{e}`")
-
-        # Update db metadata to reflect filtered playback
-        db[chat_id][0]["file"] = out
-        db[chat_id][0]["start_time"] = time.time() - played_seconds
-        db[chat_id][0]["seconds"] = dur
-        db[chat_id][0]["dur"] = duration_str
-
     async def ping(self):
         pings = []
         if config.STRING1:
@@ -1191,21 +885,6 @@ class Call(PyTgCalls):
         if config.STRING5:
             pings.append(await self.five.ping)
         return str(round(sum(pings) / len(pings), 3))
-
-    async def stop(self):
-        LOGGER.info("Stopping PyTgCalls Clients...")
-        try:
-            for ass in [self.one, self.two, self.three, self.four, self.five]:
-                if not ass: continue
-                if IS_LEGACY:
-                    # In legacy, you might need to call leave_all or just stop
-                    try: await ass.stop()
-                    except: pass
-                else:
-                    await ass.stop()
-            LOGGER.info("PyTgCalls Clients stopped.")
-        except Exception as e:
-            LOGGER.warning(f"Error while stopping PyTgCalls: {e}")
 
     async def start(self):
         LOGGER.info("Starting PyTgCalls Client...\n")
@@ -1221,60 +900,62 @@ class Call(PyTgCalls):
             await self.five.start()
 
     async def decorators(self):
-        # Helper to safely register decorators
-        def register_handler(client, event_name, handler):
-            if not client: return
-            try:
-                method = getattr(client, event_name, None)
-                if method:
-                    method()(handler)
-                else:
-                    LOGGER.debug(f"[decorators] {event_name} not supported by this pytgcalls version.")
-            except Exception as e:
-                LOGGER.warning(f"[decorators] Failed to register {event_name}: {e}")
-
+        @self.one.on_kicked()
+        @self.two.on_kicked()
+        @self.three.on_kicked()
+        @self.four.on_kicked()
+        @self.five.on_kicked()
+        @self.one.on_closed_voice_chat()
+        @self.two.on_closed_voice_chat()
+        @self.three.on_closed_voice_chat()
+        @self.four.on_closed_voice_chat()
+        @self.five.on_closed_voice_chat()
+        @self.one.on_left()
+        @self.two.on_left()
+        @self.three.on_left()
+        @self.four.on_left()
+        @self.five.on_left()
         async def stream_services_handler(_, chat_id: int):
             await self.stop_stream(chat_id)
 
-        # Register service handlers
-        for ass in [self.one, self.two, self.three, self.four, self.five]:
-            if not ass: continue
-            register_handler(ass, "on_kicked", stream_services_handler)
-            register_handler(ass, "on_closed_voice_chat", stream_services_handler)
-            register_handler(ass, "on_left", stream_services_handler)
-
+        @self.one.on_stream_end()
+        @self.two.on_stream_end()
+        @self.three.on_stream_end()
+        @self.four.on_stream_end()
+        @self.five.on_stream_end()
         async def stream_end_handler1(client, update: Update):
             update_type = type(update).__name__
             chat_id = getattr(update, 'chat_id', None)
             LOGGER.info(f"[on_stream_end] Received update type={update_type} chat={chat_id}")
 
             if not chat_id:
+                LOGGER.warning(f"[on_stream_end] No chat_id on update {update_type}, ignoring.")
                 return
 
-            # Check for end of stream
-            is_end = False
-            if IS_V3:
-                if isinstance(update, (StreamAudioEnded, StreamVideoEnded, StreamDeleted)):
-                    is_end = True
-            else:
-                # In legacy versions, we might need to check update properties or specific classes
-                if update_type in ["StreamAudioEnded", "StreamVideoEnded", "StreamDeleted"]:
-                    is_end = True
-            
-            if not is_end:
-                return
+            # Only act on genuine end-of-stream events
+            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
+                # StreamDeleted also means the stream is gone
+                try:
+                    from pytgcalls.types.stream import StreamDeleted
+                    if isinstance(update, StreamDeleted):
+                        LOGGER.info(f"[on_stream_end] StreamDeleted for {chat_id}, treating as stream end.")
+                    else:
+                        LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
+                        return
+                except ImportError:
+                    LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
+                    return
 
             LOGGER.info(f"[on_stream_end] Processing stream end for chat {chat_id}")
             try:
+                # Disconnect execution from the event loop using create_task
                 asyncio.create_task(self.change_stream(client, chat_id))
             except Exception as e:
-                LOGGER.error(f"[on_stream_end] change_stream failed: {e}")
-                await self.stop_stream(chat_id)
-
-        # Register stream end handlers
-        for ass in [self.one, self.two, self.three, self.four, self.five]:
-            if not ass: continue
-            register_handler(ass, "on_stream_end", stream_end_handler1)
+                LOGGER.error(f"[on_stream_end] change_stream failed for {chat_id}: {e}")
+                try:
+                    await self.stop_stream(chat_id)
+                except:
+                    pass
 
 
 
