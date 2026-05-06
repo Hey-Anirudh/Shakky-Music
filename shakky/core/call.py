@@ -392,7 +392,7 @@ class Call(PyTgCalls):
         language = await get_lang(chat_id)
         _ = get_string(language)
 
-        payload = kwargs.get("payload", {})
+        payload = kwargs.get("payload") or {}
         af = payload.get("af", "")
         ff_params = f"-af {af}" if af else None
 
