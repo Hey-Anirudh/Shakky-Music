@@ -102,14 +102,29 @@ except ImportError:
                 
                 async def change_stream(chat_id, stream):
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
-                        # 🌪️ PIPE OVERHAUL: Manually pipe FFmpeg output for perfect effects on Legacy
-                        proc = await asyncio.create_subprocess_shell(
-                            stream,
-                            stdout=asyncio.subprocess.PIPE,
+                        # 🌪️ FIFO OVERHAUL: Using Named Pipes for 100% legacy compatibility
+                        pipe_path = f"downloads/shakky_pipe_{abs(chat_id)}.raw"
+                        if os.path.exists(pipe_path):
+                            try: os.remove(pipe_path)
+                            except: pass
+                        
+                        try: os.mkfifo(pipe_path)
+                        except: pass
+                        
+                        # Start FFmpeg as a background process writing to the FIFO
+                        # We use a shell command to ensure redirection works
+                        cmd = f"{stream} > {pipe_path}"
+                        asyncio.create_subprocess_shell(
+                            cmd,
+                            stdout=asyncio.subprocess.DEVNULL,
                             stderr=asyncio.subprocess.DEVNULL
                         )
-                        # We pass the stdout pipe directly to the voice engine
-                        return await self._call.start_audio(proc.stdout)
+                        
+                        # Wait a tiny bit for the pipe to be ready
+                        await asyncio.sleep(0.5)
+                        
+                        # We pass the FIFO path to the legacy voice engine
+                        return await self._call.start_audio(pipe_path)
                     
                     path = getattr(stream, 'path', stream)
                     return await self._call.start_audio(path)
@@ -211,14 +226,15 @@ class Call:
         
         if IS_LEGACY and (filters or ss != 0):
             # 🚀 REMAKE: For Legacy, we use FFmpeg to pre-process the stream and pipe it.
-            # This is the ONLY way to guarantee effects work on 0.9.7.
             # We use s16le/48k/2ch which is standard for Telegram VC.
             seek_arg = f"-ss {ss}"
             if to: seek_arg += f" -to {to}"
             
             filter_arg = f"-af \"{filters}\"" if filters else ""
+            re_arg = "-re" if "http" in str(path) else ""
+            
             # We return a string that the Legacy Wrapper will recognize as a Pipe
-            return f"ffmpeg -i {path} {seek_arg} {filter_arg} -f s16le -ac 2 -ar 48000 pipe:1"
+            return f"ffmpeg -y -loglevel panic {re_arg} -i {path} {seek_arg} {filter_arg} -f s16le -ac 2 -ar 48000 pipe:1"
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
