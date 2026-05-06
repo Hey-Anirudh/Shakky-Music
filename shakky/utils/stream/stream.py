@@ -42,6 +42,7 @@ async def stream(
     spotify: Union[bool, str] = None,
     forceplay: Union[bool, str] = None,
     raw_query: str = None,
+    **kwargs,
 ):
     if not result:
         return await mystic.edit_text("➲ **No results found.**")
