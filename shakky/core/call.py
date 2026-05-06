@@ -27,13 +27,43 @@ except ImportError:
     # --- Legacy Era (v0) ---
     try:
         from pytgcalls import GroupCallFactory
-        from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-        PyTgCalls = GroupCallFactory # Map for compatibility
+        class PyTgCalls:
+            def __init__(self, client, **kwargs):
+                self._factory = GroupCallFactory(client)
+                self._call = self._factory.get_group_call()
+                self.start = self._call.start
+                self.stop = self._call.stop
+                self.join = self._call.join
+                self.leave = self._call.leave
+                self.start_audio = self._call.start_audio
+                self.pause_stream = self._call.pause_stream
+                self.resume_stream = self._call.resume_stream
+                # Map modern change_stream to legacy start_audio
+                async def change_stream(chat_id, stream):
+                    path = getattr(stream, 'path', stream)
+                    filters = getattr(stream, 'kwargs', {}).get('additional_ffmpeg_parameters', "")
+                    if filters:
+                        return await self._call.start_audio(path, ffmpeg_parameters=filters)
+                    return await self._call.start_audio(path)
+                self.change_stream = change_stream
+        
         IS_LEGACY = True
         IS_V3 = False
-        # Legacy dummies
+        # Legacy dummies/shims
+        class AudioPiped: 
+            def __init__(self, p, **kwargs): 
+                self.path = p
+                self.kwargs = kwargs
+        class AudioVideoPiped(AudioPiped): pass
         class HighQualityAudio: pass
         class MediumQualityVideo: pass
+        class Update: pass
+        class StreamAudioEnded: pass
+        class StreamVideoEnded: pass
+        class StreamDeleted: pass
+        class StreamType:
+            pulse_stream = "pulse"
+            pulse = "pulse"
     except ImportError:
         # Fallback for dev-specific paths
         try:
