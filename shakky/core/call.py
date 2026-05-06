@@ -8,6 +8,9 @@ from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
 from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+import pytgcalls
+# 🤖 Universal Core Switch (ARM VPS Fix)
+# This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
 IS_V3 = False
 IS_LEGACY = False
 
@@ -17,6 +20,11 @@ try:
     from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
+    
+    # Check if this is ACTUALLY legacy (0.9.x often has PyTgCalls but not join_group_call)
+    if not hasattr(PyTgCalls, "join_group_call"):
+        raise ImportError("Legacy detected via missing join_group_call")
+        
     try:
         from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
         IS_V3 = True
@@ -29,10 +37,22 @@ except ImportError:
     # --- Legacy Era (v0.9.x) ---
     IS_LEGACY = True
     try:
-        from pytgcalls import PyTgCalls
+        from pytgcalls import GroupCallFactory
+        class PyTgCalls:
+            def __init__(self, client, **kwargs):
+                self._factory = GroupCallFactory(client)
+                self._call = self._factory.get_group_call()
+                self.start = self._call.start
+                self.stop = self._call.stop
+                self.join = self._call.join
+                self.leave = self._call.leave
+                self.start_audio = self._call.start_audio
+                # Add other methods as needed
+            def __getattr__(self, name):
+                return getattr(self._call, name)
     except ImportError:
         try:
-            from pytgcalls import GroupCallFactory as PyTgCalls
+            from pytgcalls import PyTgCalls
         except ImportError:
             LOGGER.critical("No PyTgCalls found. Please install it.")
             raise
