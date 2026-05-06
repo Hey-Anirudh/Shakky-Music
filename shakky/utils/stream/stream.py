@@ -101,6 +101,9 @@ async def stream(
                 )
                 asyncio.create_task(_predownload_queued(chat_id, position))
             else:
+                from shakky.misc import last_played
+                last_played[chat_id] = title
+                
                 await put_queue(
                     chat_id,
                     original_chat_id,
@@ -128,6 +131,8 @@ async def stream(
                     file_path,
                     video=status,
                     image=thumbnail,
+                    # Add subtle fade-in for Pro-DJ tracks
+                    payload={"af": "afade=t=in:ss=0:d=1.5"} if kwargs.get("is_prodj") else None
                 )
                 current = db[chat_id][0]
                 current["start_time"] = time.time()
@@ -144,6 +149,9 @@ async def stream(
                 await mystic.edit_text(f"➲ **Adding {len(result)} tracks from Spotify Playlist...**")
                 
                 for i, track_name in enumerate(result):
+                    if i == 0:
+                        from shakky.misc import last_played
+                        last_played[chat_id] = track_name
                     # We queue them as vid_sp_SEARCHTERM to resolve on-play
                     await put_queue(
                         chat_id,
@@ -184,6 +192,10 @@ async def stream(
                 # We leverage the youtube block by rewriting result/streamtype
                 vidid = result.get("vidid")
                 title = str(result.get("title", "Unknown")).title()
+                
+                from shakky.misc import last_played
+                last_played[chat_id] = title
+                
                 duration_min = result.get("duration_min", "0:00")
                 thumbnail = result.get("thumb", "")
                 status = True if video else None

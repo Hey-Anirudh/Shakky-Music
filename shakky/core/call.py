@@ -386,26 +386,30 @@ class Call(PyTgCalls):
         link,
         video: Union[bool, str] = None,
         image: Union[bool, str] = None,
+        **kwargs,
     ):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
+
+        payload = kwargs.get("payload", {})
+        af = payload.get("af", "")
+        ff_params = f"-af {af}" if af else None
+
         if video:
             stream = AudioVideoPiped(
                 link,
                 audio_parameters=HighQualityAudio(),
                 video_parameters=MediumQualityVideo(),
+                additional_ffmpeg_parameters=ff_params
             )
         else:
-            stream = (
-                AudioVideoPiped(
-                    link,
-                    audio_parameters=HighQualityAudio(),
-                    video_parameters=MediumQualityVideo(),
-                )
-                if video
-                else AudioPiped(link, audio_parameters=HighQualityAudio())
+            stream = AudioPiped(
+                link, 
+                audio_parameters=HighQualityAudio(),
+                additional_ffmpeg_parameters=ff_params
             )
+        
         # --- JIT Assistant Metadata Sync ---
         userbot = None
         if assistant == self.one: userbot = self.userbot1
@@ -619,6 +623,11 @@ class Call(PyTgCalls):
             title = (check[0]["title"]).title()
             user = check[0]["by"]
             original_chat_id = check[0]["chat_id"]
+
+            # --- Update Last Played Context for AI Recommendations ---
+            from shakky.misc import last_played
+            last_played[chat_id] = title
+            
             streamtype = check[0]["streamtype"]
             videoid = check[0]["vidid"]
             
@@ -771,7 +780,9 @@ class Call(PyTgCalls):
                         # 2. At 40 seconds, perform the instant switch
                         await asyncio.sleep(20) 
                         LOGGER.info(f"[Pro-DJ] Performing instant transition in {chat_id}")
-                        await self.skip_stream(chat_id)
+                        # Use the correct assistant client for the skip
+                        assistant = await group_assistant(self, chat_id)
+                        await self.change_stream(assistant, chat_id)
                     
                     self.dj_timer[chat_id] = asyncio.create_task(dj_wait())
 
