@@ -89,10 +89,10 @@ except ImportError:
     try:
         from pytgcalls import GroupCallFactory
         class PyTgCalls:
-            def __init__(self, client, parent=None, **kwargs):
+            def __init__(self, client, **kwargs):
                 self._factory = GroupCallFactory(client)
                 self._call = self._factory.get_group_call()
-                self._parent = parent
+                self._parent = kwargs.get("parent")
                 self.start = self._call.start
                 self.stop = self._call.stop
                 self.join = self._call.join
@@ -203,16 +203,21 @@ async def _clear_(chat_id):
 
 class Call:
     def __init__(self):
+        def _init_ass(userbot):
+            if not userbot: return None
+            if IS_LEGACY: return PyTgCalls(userbot, parent=self, cache_duration=100)
+            return PyTgCalls(userbot, cache_duration=100)
+
         self.userbot1 = Client(name="Ass1", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING1), no_updates=True)
-        self.one = PyTgCalls(self.userbot1, self, cache_duration=100)
+        self.one = _init_ass(self.userbot1)
         self.userbot2 = Client(name="Ass2", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING2), no_updates=True) if config.STRING2 else None
-        self.two = PyTgCalls(self.userbot2, self, cache_duration=100) if self.userbot2 else None
+        self.two = _init_ass(self.userbot2)
         self.userbot3 = Client(name="Ass3", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING3), no_updates=True) if config.STRING3 else None
-        self.three = PyTgCalls(self.userbot3, self, cache_duration=100) if self.userbot3 else None
+        self.three = _init_ass(self.userbot3)
         self.userbot4 = Client(name="Ass4", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING4), no_updates=True) if config.STRING4 else None
-        self.four = PyTgCalls(self.userbot4, self, cache_duration=100) if self.userbot4 else None
+        self.four = _init_ass(self.userbot4)
         self.userbot5 = Client(name="Ass5", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING5), no_updates=True) if config.STRING5 else None
-        self.five = PyTgCalls(self.userbot5, self, cache_duration=100) if self.userbot5 else None
+        self.five = _init_ass(self.userbot5)
         self._locks = {}
         self._last_skip = {}
         self._active_effects = {} # chat_id -> effect_payload
