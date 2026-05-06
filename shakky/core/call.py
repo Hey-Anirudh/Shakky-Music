@@ -492,8 +492,10 @@ class Call(PyTgCalls):
                             pass
                     except:
                         pass
-                LOGGER.error(f"Membership check for Assistant failed: {e}")
-                # Don't re-raise general exceptions yet, try to proceed and see if join_group_call works
+                else:
+                    LOGGER.error(f"Membership check for Assistant failed: {e}")
+                # 🚀 Resilience: Don't raise or stop. Proceed and let pytgcalls attempt the join.
+                # If the assistant is already there, it will work regardless of the status check failure.
         except AssistantErr:
             raise
         except Exception as e:
