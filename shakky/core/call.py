@@ -111,6 +111,7 @@ class Call(PyTgCalls):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING1),
+            no_updates=True,
         )
         self.one = PyTgCalls(self.userbot1, cache_duration=100)
         
@@ -119,32 +120,36 @@ class Call(PyTgCalls):
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING2),
-        )
-        self.two = PyTgCalls(self.userbot2, cache_duration=100)
+            no_updates=True,
+        ) if config.STRING2 else None
+        self.two = PyTgCalls(self.userbot2, cache_duration=100) if self.userbot2 else None
         
         self.userbot3 = Client(
             name="Ass3",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING3),
-        )
-        self.three = PyTgCalls(self.userbot3, cache_duration=100)
+            no_updates=True,
+        ) if config.STRING3 else None
+        self.three = PyTgCalls(self.userbot3, cache_duration=100) if self.userbot3 else None
         
         self.userbot4 = Client(
             name="Ass4",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING4),
-        )
-        self.four = PyTgCalls(self.userbot4, cache_duration=100)
+            no_updates=True,
+        ) if config.STRING4 else None
+        self.four = PyTgCalls(self.userbot4, cache_duration=100) if self.userbot4 else None
         
         self.userbot5 = Client(
             name="Ass5",
             api_id=config.API_ID,
             api_hash=config.API_HASH,
             session_string=str(config.STRING5),
-        )
-        self.five = PyTgCalls(self.userbot5, cache_duration=100)
+            no_updates=True,
+        ) if config.STRING5 else None
+        self.five = PyTgCalls(self.userbot5, cache_duration=100) if self.userbot5 else None
         self._locks = {}
         self._last_skip = {}
         self.dj_timer = {}
@@ -553,24 +558,32 @@ class Call(PyTgCalls):
         joined = False
         last_err = None
 
+        # 🔄 Clean slate attempt: Leave first to clear any ghost sessions
+        try:
+            LOGGER.info(f"[join_call] Pre-join: Attempting to leave ghost session for {chat_id}...")
+            await assistant.leave_group_call(chat_id)
+            await asyncio.sleep(1)
+        except:
+            pass
+
         for attempt in range(3):
             try:
                 if attempt > 0:
                     LOGGER.info(f"[join_call] Retry attempt {attempt} for {chat_id}...")
                     await self._refresh_vc_state(userbot, chat_id)
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(1.5)
 
-                LOGGER.info(f"[join_call] Calling join_group_call (attempt {attempt}) for {chat_id}...")
+                LOGGER.info(f"[join_call] Executing join_group_call (attempt {attempt}) for {chat_id}...")
                 await assistant.join_group_call(
                     chat_id,
                     stream,
                     stream_type=StreamType().pulse_stream,
                 )
                 joined = True
-                LOGGER.info(f"[join_call] Successfully joined VC in {chat_id}")
+                LOGGER.info(f"[join_call] SUCCESS: Joined VC in {chat_id}")
                 break
             except AlreadyJoinedError:
-                LOGGER.info(f"[join_call] AlreadyJoinedError for {chat_id}, treating as success")
+                LOGGER.info(f"[join_call] AlreadyJoinedError for {chat_id}, checking stream...")
                 joined = True
                 break
             except NoActiveGroupCall:
@@ -579,12 +592,14 @@ class Call(PyTgCalls):
                 break
             except TelegramServerError as e:
                 last_err = e
-                LOGGER.warning(f"[join_call] TelegramServerError attempt {attempt} for {chat_id}: {e}")
+                LOGGER.warning(f"[join_call] TelegramServerError (attempt {attempt}) for {chat_id}: {e}")
+                await asyncio.sleep(2)
             except Exception as e:
                 import traceback
                 last_err = e
-                LOGGER.error(f"[join_call] Attempt {attempt} failed for {chat_id}: {type(e).__name__}: {e}")
+                LOGGER.error(f"[join_call] CRITICAL: Attempt {attempt} failed for {chat_id}: {type(e).__name__}: {e}")
                 LOGGER.error(f"[join_call] Full traceback:\n{traceback.format_exc()}")
+                await asyncio.sleep(1)
 
         if not joined:
             LOGGER.error(f"[join_call] Failed to join VC in {chat_id}. Error: {last_err}")
