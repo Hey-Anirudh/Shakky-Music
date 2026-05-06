@@ -147,6 +147,7 @@ class Call(PyTgCalls):
         self.five = PyTgCalls(self.userbot5, cache_duration=100)
         self._locks = {}
         self._last_skip = {}
+        self.dj_timer = {}
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks:
@@ -747,6 +748,27 @@ class Call(PyTgCalls):
             try:
                 db[chat_id][0]["start_time"] = time.time()
                 await client.change_stream(chat_id, stream)
+
+                # --- Pro-DJ Mode Logic ---
+                from shakky.utils.database import is_prodj
+                
+                # Cancel existing DJ timer
+                if chat_id in self.dj_timer:
+                    try:
+                        self.dj_timer[chat_id].cancel()
+                        del self.dj_timer[chat_id]
+                    except: pass
+                
+                # Start new DJ timer if enabled
+                if await is_prodj(chat_id):
+                    async def dj_wait():
+                        await asyncio.sleep(40) # 40 seconds cut
+                        LOGGER.info(f"[Pro-DJ] Transitioning after 40s in {chat_id}")
+                        # Fire and forget skip
+                        asyncio.create_task(self._autodj_next(chat_id))
+                    
+                    self.dj_timer[chat_id] = asyncio.create_task(dj_wait())
+
             except Exception as e:
                 import traceback
                 err_msg = str(e)

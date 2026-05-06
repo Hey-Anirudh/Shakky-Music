@@ -27,6 +27,7 @@ statsdb = mongodb.stats
 gmuteddb = mongodb.gmuted
 cohostdb = mongodb.cohost
 autodjdb = mongodb.autodj
+prodjdb = mongodb.prodj
 
 
 active = []
@@ -47,6 +48,7 @@ mute = {}
 gmuted = []
 cohost = {}
 autodj = {}
+prodj = {}
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
@@ -850,6 +852,29 @@ async def autodj_off(chat_id: int):
     user = await autodjdb.find_one({"chat_id": chat_id})
     if user:
         return await autodjdb.delete_one({"chat_id": chat_id})
+
+async def is_prodj(chat_id: int) -> bool:
+    mode = prodj.get(chat_id)
+    if mode is None:
+        user = await prodjdb.find_one({"chat_id": chat_id})
+        if not user:
+            prodj[chat_id] = False
+            return False
+        prodj[chat_id] = True
+        return True
+    return mode
+
+async def prodj_on(chat_id: int):
+    prodj[chat_id] = True
+    user = await prodjdb.find_one({"chat_id": chat_id})
+    if not user:
+        return await prodjdb.insert_one({"chat_id": chat_id})
+
+async def prodj_off(chat_id: int):
+    prodj[chat_id] = False
+    user = await prodjdb.find_one({"chat_id": chat_id})
+    if user:
+        return await prodjdb.delete_one({"chat_id": chat_id})
 
 async def _get_filters(chat_id: int) -> Dict[str, int]:
     _filters = await filtersdb.find_one({"chat_id": chat_id})
