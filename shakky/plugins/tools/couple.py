@@ -136,11 +136,13 @@ async def ctest(_, message):
             img.save(test_image_path)
 
             TXT = f"""
-<b>Tᴏᴅᴀʏ's ᴄᴏᴜᴘʟᴇ ᴏғ ᴛʜᴇ ᴅᴀʏ:
-
-{N1} + {N2} = 💚
-
-Nᴇxᴛ ᴄᴏᴜᴘʟᴇs ᴡɪʟʟ ʙᴇ sᴇʟᴇᴄᴛᴇᴅ ᴏɴ {tomorrow}!!</b>
+➲ **COUPLE OF THE DAY**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>
+✧ {N1} + {N2} = 💚
+</blockquote>
+━━━━━━━━━━━━━━━━━━━━
+Nᴇxᴛ ᴄᴏᴜᴘʟᴇs ᴡɪʟʟ ʙᴇ sᴇʟᴇᴄᴛᴇᴅ ᴏɴ <code>{tomorrow}</code>!!
             """
 
             await message.reply_photo(
@@ -174,12 +176,15 @@ Nᴇxᴛ ᴄᴏᴜᴘʟᴇs ᴡɪʟʟ ʙᴇ sᴇʟᴇᴄᴛᴇᴅ ᴏɴ {tomorro
             c2_name = (await app.get_users(c2_id)).first_name
 
             TXT = f"""
-<b>Tᴏᴅᴀʏ's ᴄᴏᴜᴘʟᴇ ᴏғ ᴛʜᴇ ᴅᴀʏ 🎉:
-
-[{c1_name}](tg://openmessage?user_id={c1_id}) + [{c2_name}](tg://openmessage?user_id={c2_id}) = ❣️
-
-Nᴇxᴛ ᴄᴏᴜᴘʟᴇs ᴡɪʟʟ ʙᴇ sᴇʟᴇᴄᴛᴇᴅ ᴏɴ {tomorrow}!!</b>
+➲ **COUPLE OF THE DAY**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>
+✧ [{c1_name}](tg://openmessage?user_id={c1_id}) + [{c2_name}](tg://openmessage?user_id={c2_id}) = ❣️
+</blockquote>
+━━━━━━━━━━━━━━━━━━━━
+Nᴇxᴛ ᴄᴏᴜᴘʟᴇs ᴡɪʟʟ ʙᴇ sᴇʟᴇᴄᴛᴇᴅ ᴏɴ <code>{tomorrow}</code>!!
             """
+
             await message.reply_photo(
                 b,
                 caption=TXT,

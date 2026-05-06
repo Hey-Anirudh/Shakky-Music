@@ -25,20 +25,25 @@ async def wrapped_command(client, message: Message):
     top_songs = sorted(history.items(), key=lambda x: x[1].get('count', 0), reverse=True)[:5]
     
     msg = (
-        f"🏆 **{message.from_user.first_name}'s Music Wrapped** 🏆\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✧ **Tracks Explored:** `{total_tracks}`\n"
-        f"✧ **Time Grooving:** `{total_time}`\n\n"
-        f"🔥 **Your All-Time Top 5:**\n"
+        f"✨ **MUSIC WRAPPED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 <b>User:</b> {message.from_user.mention}\n\n"
+        f"<blockquote>"
+        f"✧ **Tracks Explored:** <code>{total_tracks}</code>\n"
+        f"✧ **Time Grooving:** <code>{total_time}</code>\n"
+        f"</blockquote>\n"
+        f"🔥 **YOUR TOP 5 TRACKS:**\n"
     )
     
+    top_data = ""
     for i, (vidid, data) in enumerate(top_songs, 1):
         title = data.get('title', 'Unknown').title()
         count = data.get('count', 0)
-        msg += f"{i}. `{title[:28]}` ({count} plays)\n"
+        top_data += f"{i}. <code>{title[:28]}</code> ({count} plays)\n"
         
-    msg += f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-    msg += "➲ *Keep smashing regular tunes to rise through the ranks!*"
+    msg += f"<blockquote>{top_data}</blockquote>\n"
+    msg += f"━━━━━━━━━━━━━━━━━━━━\n"
+    msg += "➲ *Keep smashing tunes to rise through the ranks!*"
     
     await message.reply_text(msg)
 
@@ -57,12 +62,15 @@ async def global_stats_command(client, message: Message):
     total_time = seconds_to_min(total_secs)
     
     msg = (
-        f"🌐 **Smash Music Global Stats** 🌐\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"✧ **Total Songs Streamed:** `{total_calls}`\n"
-        f"✧ **Global Listening Time:** `{total_time}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"🌐 **GLOBAL STATISTICS**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Total Streamed:** <code>{total_calls}</code>\n"
+        f"✧ **Listening Time:** <code>{total_time}</code>\n"
+        f"</blockquote>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
         f"➲ *Powered by Smash Music Engine*"
     )
     
     await message.reply_text(msg)
+

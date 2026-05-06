@@ -33,7 +33,7 @@ async def log_(client, message, _):
     try:
         await message.reply_document(document="log.txt")
     except:
-        await message.reply_text(_["server_1"])
+        await message.reply_text("➲ **SYSTEM LOGS**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ғᴀɪʟᴇᴅ ᴛᴏ ғᴇᴛᴄʜ sᴇʀᴠᴇʀ ʟᴏɢs.</blockquote>")
 
 
 @app.on_message(filters.command(["update", "gitpull"], prefixes=["/", "!", "%", ",", ".", "@", "#"]) & SUDOERS)
@@ -65,15 +65,15 @@ async def update_(client, message, _):
     )
     for info in repo.iter_commits(f"HEAD..origin/{config.UPSTREAM_BRANCH}"):
         updates += f"<b>➣ #{info.count()}: <a href={REPO_}/commit/{info}>{info.summary}</a> ʙʏ -> {info.author}</b>\n\t\t\t\t<b>➥ ᴄᴏᴍᴍɪᴛᴇᴅ ᴏɴ :</b> {ordinal(int(datetime.fromtimestamp(info.committed_date).strftime('%d')))} {datetime.fromtimestamp(info.committed_date).strftime('%b')}, {datetime.fromtimestamp(info.committed_date).strftime('%Y')}\n\n"
-    _update_response_ = "<b>ᴀ ɴᴇᴡ ᴜᴩᴅᴀᴛᴇ ɪs ᴀᴠᴀɪʟᴀʙʟᴇ ғᴏʀ ᴛʜᴇ ʙᴏᴛ !</b>\n\n➣ ᴩᴜsʜɪɴɢ ᴜᴩᴅᴀᴛᴇs ɴᴏᴡ\n\n<b><u>ᴜᴩᴅᴀᴛᴇs:</u></b>\n\n"
+    _update_response_ = "➲ **SYSTEM UPDATE**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>**ᴀ ɴᴇᴡ ᴜᴩᴅᴀᴛᴇ ɪs ᴀᴠᴀɪʟᴀʙʟᴇ!**\n\n➣ ᴩᴜsʜɪɴɢ ᴜᴩᴅᴀᴛᴇs ɴᴏᴡ...\n\n**<u>ᴜᴩᴅᴀᴛᴇs:</u>**\n\n"
     _final_updates_ = _update_response_ + updates
     if len(_final_updates_) > 4096:
         url = await ANNIEBIN(updates)
         nrs = await response.edit(
-            f"<b>ᴀ ɴᴇᴡ ᴜᴩᴅᴀᴛᴇ ɪs ᴀᴠᴀɪʟᴀʙʟᴇ ғᴏʀ ᴛʜᴇ ʙᴏᴛ !</b>\n\n➣ ᴩᴜsʜɪɴɢ ᴜᴩᴅᴀᴛᴇs ɴᴏᴡ\n\n<u><b>ᴜᴩᴅᴀᴛᴇs :</b></u>\n\n<a href={url}>ᴄʜᴇᴄᴋ ᴜᴩᴅᴀᴛᴇs</a>"
+            f"➲ **SYSTEM UPDATE**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>**ᴀ ɴᴇᴡ ᴜᴩᴅᴀᴛᴇ ɪs ᴀᴠᴀɪʟᴀʙʟᴇ!**\n\n➣ ᴩᴜsʜɪɴɢ ᴜᴩᴅᴀᴛᴇs ɴᴏᴡ...\n\n**<u>ᴜᴩᴅᴀᴛᴇs:</u>**\n\n<a href={url}>ᴄʜᴇᴄᴋ ᴜᴩᴅᴀᴛᴇs ʜᴇʀᴇ</a></blockquote>"
         )
     else:
-        nrs = await response.edit(_final_updates_, disable_web_page_preview=True)
+        nrs = await response.edit(_final_updates_ + "</blockquote>", disable_web_page_preview=True)
     os.system("git stash &> /dev/null && git pull")
 
     try:
@@ -112,13 +112,13 @@ async def update_(client, message, _):
 
 @app.on_message(filters.command(["restart"]) & SUDOERS)
 async def restart_(_, message):
-    response = await message.reply_text("ʀᴇsᴛᴀʀᴛɪɴɢ...")
+    response = await message.reply_text("➲ **SYSTEM RESTART**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɪɴɪᴛɪᴀᴛɪɴɢ ʀᴇsᴛᴀʀᴛ sᴇǫᴜᴇɴᴄᴇ...</blockquote>")
     ac_chats = await get_active_chats()
     for x in ac_chats:
         try:
             await app.send_message(
                 chat_id=int(x),
-                text=f"{app.mention} ɪs ʀᴇsᴛᴀʀᴛɪɴɢ...\n\nʏᴏᴜ ᴄᴀɴ sᴛᴀʀᴛ ᴩʟᴀʏɪɴɢ ᴀɢᴀɪɴ ᴀғᴛᴇʀ 15-20 sᴇᴄᴏɴᴅs.",
+                text=f"➲ **SYSTEM RESTART**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>{app.mention} ɪs ʀᴇsᴛᴀʀᴛɪɴɢ ᴛᴏ ᴀᴘᴘʟʏ ᴜᴘᴅᴀᴛᴇs...\n\nʏᴏᴜ ᴄᴀɴ sᴛᴀʀᴛ ᴩʟᴀʏɪɴɢ ᴀɢᴀɪɴ ɪɴ 15-20 sᴇᴄᴏɴᴅs.</blockquote>",
             )
             await remove_active_chat(x)
             await remove_active_video_chat(x)
@@ -132,6 +132,6 @@ async def restart_(_, message):
     except:
         pass
     await response.edit_text(
-        "» ʀᴇsᴛᴀʀᴛ ᴘʀᴏᴄᴇss sᴛᴀʀᴛᴇᴅ, ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ғᴏʀ ғᴇᴡ sᴇᴄᴏɴᴅs ᴜɴᴛɪʟ ᴛʜᴇ ʙᴏᴛ sᴛᴀʀᴛs..."
+        "➲ **SYSTEM RESTART**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ʀᴇsᴛᴀʀᴛ ᴘʀᴏᴄᴇss sᴛᴀʀᴛᴇᴅ. ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ ᴀ ғᴇᴡ sᴇᴄᴏɴᴅs ᴜɴᴛɪʟ ᴛʜᴇ ʙᴏᴛ ᴄᴏᴍᴇs ʙᴀᴄᴋ ᴏɴʟɪɴᴇ...</blockquote>"
     )
     os.system(f"kill -9 {os.getpid()} && bash start")

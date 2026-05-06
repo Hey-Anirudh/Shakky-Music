@@ -179,7 +179,7 @@ async def gali_group(client: Client, message: Message):
         except:
             pass
     else:
-        reply_msg = await message.reply("**🚫 This command is only for admins!**\n\n💬 Try this in my DMs instead.")
+        reply_msg = await message.reply("➲ **RESTRICTED**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>🚫 ᴛʜɪs ᴄᴏᴍᴍᴀɴᴅ ɪs ᴏɴʟʏ ғᴏʀ ᴀᴅᴍɪɴs!\n\n💬 ᴛʀʏ ᴛʜɪs ɪɴ ᴍʏ ᴅᴍs ɪɴsᴛᴇᴀᴅ.</blockquote>")
         await asyncio.sleep(10)
         try:
             await reply_msg.delete()

@@ -205,7 +205,7 @@ async def close_handler(client, CallbackQuery: CallbackQuery):
 
 async def markup_timer():
     while True:
-        await asyncio.sleep(5)
+        await asyncio.sleep(15)
         active_chats = await get_active_chats()
         for chat_id in active_chats:
             try:

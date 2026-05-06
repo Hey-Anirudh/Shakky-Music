@@ -10,6 +10,7 @@ from typing import List, Optional, Any
 
 LOGGER = logging.getLogger("shakky.server")
 
+
 # Robust imports
 try:
     from socketio import AsyncServer, ASGIApp
@@ -215,8 +216,14 @@ async def update_state(state: QueueState):
     live_rooms[chat_key]["state"] = state_dict
     save_rooms()
     
-    await sio.emit('room_update', state_dict, room=f"room_{chat_key}")
+    # Only emit if it's a critical action OR if there are actually users in the room
+    # This prevents "socket.send() raised exception" spam when nobody is watching
+    has_users = len(live_rooms[chat_key].get("users", {})) > 0
+    if action != "sync" or has_users:
+        await sio.emit('room_update', state_dict, room=f"room_{chat_key}")
+    
     return {"status": "ok"}
+
 
 active_chat_users = {}
 

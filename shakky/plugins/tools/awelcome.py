@@ -72,7 +72,7 @@ async def auto_state(_, message):
         user_command_count[user_id] = 1
         user_last_message_time[user_id] = current_time
 
-    usage = "ᴜsᴀɢᴇ:\n⦿ /awelcome [on|off]"
+    usage = "➲ **AWELCOME SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>**Usage:** /awelcome [on|off]</blockquote>"
     if len(message.command) == 1:
         return await message.reply_text(usage)
 
@@ -93,21 +93,21 @@ async def auto_state(_, message):
             else:
                 await wlcm.rm_wlcm(chat_id)
                 await message.reply_text(
-                    f"ᴇɴᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ {message.chat.title}"
+                    f"➲ **AWELCOME SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ᴇɴᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ {message.chat.title}</blockquote>"
                 )
         elif state == "off":
             if is_off:
-                await message.reply_text("ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ ᴅɪsᴀʙʟᴇᴅ !")
+                await message.reply_text("➲ **AWELCOME SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ᴀʟʀᴇᴀᴅʏ ᴅɪsᴀʙʟᴇᴅ !</blockquote>")
             else:
                 await wlcm.add_wlcm(chat_id)
                 await message.reply_text(
-                    f"ᴅɪsᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ {message.chat.title}"
+                    f"➲ **AWELCOME SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ᴅɪsᴀʙʟᴇᴅ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ ɪɴ {message.chat.title}</blockquote>"
                 )
         else:
             await message.reply_text(usage)
     else:
         await message.reply(
-            "sᴏʀʀʏ ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴇɴᴀʙʟᴇ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ!"
+            "➲ **AWELCOME SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>sᴏʀʀʏ, ᴏɴʟʏ ᴀᴅᴍɪɴs ᴄᴀɴ ᴇɴᴀʙʟᴇ ᴀssɪsᴛᴀɴᴛ ᴡᴇʟᴄᴏᴍᴇ ɴᴏᴛɪғɪᴄᴀᴛɪᴏɴ!</blockquote>"
         )
 
 
@@ -127,24 +127,24 @@ async def greet_new_members(_, member: ChatMemberUpdated):
 
         if member.new_chat_member and not member.old_chat_member:
             if user.id == OWNER_ID or user.id == 7574330905:
-                owner_welcome_text = f"""🌟 <b>𝐓ʜᴇ ᴏᴡɴᴇʀ ʜᴀs ᴀʀʀɪᴠᴇᴅ</b> 🌟
+                owner_welcome_text = f"""➲ **OWNER ARRIVED**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>🔥 **ʙᴏss {user.mention} ʜᴀs ᴊᴏɪɴᴇᴅ!**
+👑 **ᴏᴡɴᴇʀ ɪᴅ:** <code>{user.id}</code>
+🎯 **ᴜsᴇʀɴᴀᴍᴇ:** @{user.username}
+👥 **ᴛᴏᴛᴀʟ ᴍᴇᴍʙᴇʀs:** <code>{count}</code>
+🏰 **ɢʀᴏᴜᴘ:** {chat_name}
 
-🔥 <b>ʙᴏss</b> {user.mention} <b>ʜᴀs ᴊᴏɪɴᴇᴅ!</b> 🔥
-👑 <b>ᴏᴡɴᴇʀ ɪᴅ:</b> {user.id} ✨
-🎯 <b>ᴜsᴇʀɴᴀᴍᴇ:</b> @{user.username} 🚀
-👥 <b>ᴛᴏᴛᴀʟ ᴍᴇᴍʙᴇʀs:</b> {count} 📈
-🏰 <b>ɢʀᴏᴜᴘ:</b> {chat_name} 
-
-<b>ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜɪs ᴋɪɴɢᴅᴏᴍ, ʙᴏss ! 👑✨</b>"""
+**ᴡᴇʟᴄᴏᴍᴇ ᴛᴏ ᴛʜɪs ᴋɪɴɢᴅᴏᴍ, ʙᴏss! 👑✨**</blockquote>"""
                 await asyncio.sleep(3)
                 await userbot.send_message(chat_id, text=owner_welcome_text)
             else:
-                welcome_text = f"""⛳️ <b>𝐖ᴇʟᴄᴏᴍᴇ 𝐓ᴏ 𝐎ᴜʀ 𝐆ʀᴏᴜᴘ</b> ⛳️
-
-➤ <b>𝐍ᴀᴍᴇ 🖤 ◂⚚▸</b> {user.mention} 💤 ❤️
-➤ <b>𝐔ꜱᴇʀ 𝐈ᴅ 🖤 ◂⚚▸</b> {user.id} ❤️🧿
-➤ <b>𝐔ꜱᴇʀɴᴀᴍᴇ 🖤 ◂⚚▸</b> @{user.username} ❤️🌎
-➤ <b>𝐌ᴇᴍʙᴇʀs 🖤 ◂⚚▸</b> {count} ❤️🍂"""
+                welcome_text = f"""➲ **WELCOME TO THE GROUP**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>➤ **𝐍ᴀᴍᴇ:** {user.mention}
+➤ **𝐔ꜱᴇʀ 𝐈ᴅ:** <code>{user.id}</code>
+➤ **𝐔ꜱᴇʀɴᴀᴍᴇ:** @{user.username}
+➤ **𝐌ᴇᴍʙᴇʀs:** <code>{count}</code></blockquote>"""
                 await asyncio.sleep(3)
                 await userbot.send_message(chat_id, text=welcome_text)
     except Exception:

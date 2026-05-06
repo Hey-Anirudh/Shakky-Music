@@ -34,6 +34,14 @@ logging.getLogger("pymongo").setLevel(logging.ERROR)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
 logging.getLogger("pytgcalls").setLevel(logging.ERROR)
 
+# Silence noisy asyncio socket.send warnings (common with WebSockets/Socket.io)
+class NoSocketSendFilter(logging.Filter):
+    def filter(self, record):
+        msg = record.getMessage()
+        return "socket.send() raised exception" not in msg and "socket.send() raised" not in msg
+
+logging.getLogger("asyncio").addFilter(NoSocketSendFilter())
+
 
 def LOGGER(name: str) -> logging.Logger:
     return logging.getLogger(name)

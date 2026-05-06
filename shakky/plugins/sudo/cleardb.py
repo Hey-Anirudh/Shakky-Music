@@ -12,7 +12,7 @@ async def cleardb_handler(_, message):
     """Command to clear all messages from the DB channel using assistant."""
     from shakky.core.userbot import userbot
     
-    mystic = await message.reply_text(f"➲ **Assistant is clearing the DB channel ({CHANNEL_USERNAME})...**\n\n✧ This avoids bot rate-limits.")
+    mystic = await message.reply_text(f"➲ **CLEAR DB SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>✧ **Action:** ᴄʟᴇᴀʀɪɴɢ {CHANNEL_USERNAME} ᴠɪᴀ ᴀssɪsᴛᴀɴᴛ.\n✧ **Status:** ɪɴ ᴘʀᴏɢʀᴇss...</blockquote>")
     
     try:
         assistant = userbot.one
@@ -35,7 +35,7 @@ async def cleardb_handler(_, message):
                 
                 deleted_msgs = []
                 if count % 500 == 0:
-                    await mystic.edit_text(f"➲ **Assistant is working...**\n\n✧ Deleted so far: `{count}` items.")
+                    await mystic.edit_text(f"➲ **CLEAR DB SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>✧ **Action:** ᴄʟᴇᴀʀɪɴɢ {CHANNEL_USERNAME}\n✧ **Deleted:** <code>{count}</code> ɪᴛᴇᴍs...</blockquote>")
 
         # Final batch
         if deleted_msgs:
@@ -50,9 +50,9 @@ async def cleardb_handler(_, message):
                 except: pass
 
         if count == 0:
-            await mystic.edit_text(f"➲ **The DB channel is already empty.**\n\n✧ Assistant confirmed.")
+            await mystic.edit_text(f"➲ **CLEAR DB SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>✧ ᴛʜᴇ ᴅʙ ᴄʜᴀɴɴᴇʟ ɪs ᴀʟʀᴇᴀᴅʏ ᴇᴍᴘᴛʏ.</blockquote>")
         else:
-            await mystic.edit_text(f"➲ **Successfully cleared the DB channel via Assistant!**\n\n✧ Total deleted: `{count}` items.\n✧ Caches cleared.")
+            await mystic.edit_text(f"➲ **CLEAR DB SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>✧ **Status:** sᴜᴄᴄᴇssғᴜʟʟʏ ᴄʟᴇᴀʀᴇᴅ!\n✧ **Total Deleted:** <code>{count}</code>\n✧ **Caches:** ᴄʟᴇᴀʀᴇᴅ.</blockquote>")
             
     except Exception as e:
-        await mystic.edit_text(f"➲ **Assistant failed to clear DB:** `{e}`")
+        await mystic.edit_text(f"➲ **CLEAR DB SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>✧ **Error:** ᴀssɪsᴛᴀɴᴛ ғᴀɪʟᴇᴅ ᴛᴏ ᴄʟᴇᴀʀ ᴅʙ.\n✧ **Details:** <code>{e}</code></blockquote>")

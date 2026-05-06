@@ -16,16 +16,18 @@ async def ban_log(client, message: Message):
     # Parse group ID from command args
     if len(message.command) < 2:
         return await message.reply_text(
-            "**⚠️ Usage:** `/banlog <group_id>` \n"
-            "**Example:** `/banlog -1001234567890`\n\n"
-            "Fetches the recent ban/kick actions from the group's admin log.",
+            "➲ **BAN LOG SYSTEM**\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "<blockquote>**Usage:** /banlog [group_id]\n"
+            "**Example:** /banlog -1001234567890\n\n"
+            "ғᴇᴛᴄʜᴇs ᴛʜᴇ ʀᴇᴄᴇɴᴛ ʙᴀɴ/ᴋɪᴄᴋ ᴀᴄᴛɪᴏɴs ғʀᴏᴍ ᴛʜᴇ ɢʀᴏᴜᴘ's ᴀᴅᴍɪɴ ʟᴏɢ.</blockquote>",
             disable_web_page_preview=True,
         )
 
     try:
         target_chat_id = int(message.command[1])
     except ValueError:
-        return await message.reply_text("**❌ Invalid group ID.** Must be a numeric chat ID.")
+        return await message.reply_text("➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>❌ ɪɴᴠᴀʟɪᴅ ɢʀᴏᴜᴘ ɪᴅ. ᴍᴜsᴛ ʙᴇ ᴀ ɴᴜᴍᴇʀɪᴄ ᴄʜᴀᴛ ɪᴅ.</blockquote>")
 
     # Optional: limit count (default 20)
     limit = 20
@@ -35,7 +37,7 @@ async def ban_log(client, message: Message):
         except ValueError:
             pass
 
-    mystic = await message.reply_text("🔍 **Fetching recent ban actions...**")
+    mystic = await message.reply_text("➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>🔍 ғᴇᴛᴄʜɪɴɢ ʀᴇᴄᴇɴᴛ ʙᴀɴ ᴀᴄᴛɪᴏɴs...</blockquote>")
 
     try:
         # Get chat info for the header
@@ -64,15 +66,16 @@ async def ban_log(client, message: Message):
 
         if not ban_events:
             return await mystic.edit_text(
-                f"📋 **No recent ban actions found** in **{chat_title}** (`{target_chat_id}`)."
+                f"➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>📋 ɴᴏ ʀᴇᴄᴇɴᴛ ʙᴀɴ ᴀᴄᴛɪᴏɴs ғᴏᴜɴᴅ ɪɴ **{chat_title}** (<code>{target_chat_id}</code>).</blockquote>"
             )
 
         # Build the response
         msg = (
-            f"🔨 **Recent Ban Actions**\n"
+            f"➲ **BAN LOG REPORT**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote>"
             f"📌 **Group:** {chat_title}\n"
-            f"🆔 **ID:** `{target_chat_id}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🆔 **ID:** <code>{target_chat_id}</code>\n\n"
         )
 
         count = 0
@@ -115,16 +118,16 @@ async def ban_log(client, message: Message):
                 action_text = "🔄 Permission Change"
 
             msg += (
-                f"**{count}.** {action_text}\n"
-                f"   👮 **Admin:** {admin_name} (`{admin_id}`)\n"
-                f"   👤 **User:** {affected_name} (`{affected_id}`)\n"
-                f"   🕐 **Time:** `{event_time}`\n\n"
+                f"✧ {count}. {action_text}\n"
+                f"   👮 **Admin:** {admin_name} (<code>{admin_id}</code>)\n"
+                f"   👤 **User:** {affected_name} (<code>{affected_id}</code>)\n"
+                f"   🕐 **Time:** <code>{event_time}</code>\n\n"
             )
 
             if count >= limit:
                 break
 
-        msg += f"━━━━━━━━━━━━━━━━━━━━\n📊 **Total:** {count} action(s) shown"
+        msg += f"\n📊 **Total:** {count} action(s) shown</blockquote>"
 
         # Handle message length limit (4096 chars for Telegram)
         if len(msg) > 4096:
@@ -150,13 +153,15 @@ async def ban_log(client, message: Message):
         error_msg = str(e)
         if "CHAT_ADMIN_REQUIRED" in error_msg:
             await mystic.edit_text(
-                "**❌ Bot is not an admin** in that group.\n"
-                "Make sure the bot has admin rights to access the event log."
+                "➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n"
+                "<blockquote>❌ ʙᴏᴛ ɪs ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ ɪɴ ᴛʜᴀᴛ ɢʀᴏᴜᴘ.\n"
+                "ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʙᴏᴛ ʜᴀs ᴀᴅᴍɪɴ ʀɪɢʜᴛs.</blockquote>"
             )
         elif "CHANNEL_INVALID" in error_msg or "CHANNEL_PRIVATE" in error_msg:
             await mystic.edit_text(
-                "**❌ Invalid or inaccessible group.** "
-                "Make sure the bot is a member with admin rights."
+                "➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n"
+                "<blockquote>❌ ɪɴᴠᴀʟɪᴅ ᴏʀ ɪɴᴀᴄᴄᴇssɪʙʟᴇ ɢʀᴏᴜᴘ. "
+                "ᴍᴀᴋᴇ sᴜʀᴇ ᴛʜᴇ ʙᴏᴛ ɪs ᴀ ᴍᴇᴍʙᴇʀ ᴡɪᴛʜ ᴀᴅᴍɪɴ ʀɪɢʜᴛs.</blockquote>"
             )
         else:
-            await mystic.edit_text(f"**❌ Error:** `{error_msg}`")
+            await mystic.edit_text(f"➲ **BAN LOG SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>❌ **Error:** <code>{error_msg}</code></blockquote>")

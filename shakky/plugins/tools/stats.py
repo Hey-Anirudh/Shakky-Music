@@ -14,8 +14,9 @@ async def stats_handler(_, message):
         if not top_list:
             return await mystic.edit_text("➲ **No contributors found yet! Start adding songs with /addsong.**")
         
-        caption = "➲ **Smash Music : Stats (Owner Only)** 🏆\n\n"
+        caption = "➲ **BOT STATISTICS**\n━━━━━━━━━━━━━━━━━━━━\n"
         
+        stats_data = ""
         for i, user_stats in enumerate(top_list, 1):
             user_id = user_stats["user_id"]
             count = user_stats["count"]
@@ -27,11 +28,14 @@ async def stats_handler(_, message):
                 name = f"User {user_id}"
             
             # Medal for top 3
-            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "✨"
-            caption += f"{medal} **{name}** — `{count}` songs added\n"
+            medal = "🥇" if i == 1 else "🥈" if i == 2 else "🥉" if i == 3 else "✧"
+            stats_data += f"{medal} **{name}** — <code>{count}</code> songs\n"
             
-        caption += "\n🌷 **Status:** `Stable & Optimized`"
+        caption += f"<blockquote>{stats_data}</blockquote>\n"
+        caption += "━━━━━━━━━━━━━━━━━━━━\n"
+        caption += "✧ **Status:** <code>Stable & Optimized</code>"
         await mystic.edit_text(caption)
+
         
     except Exception as e:
         await mystic.edit_text(f"➲ **Failed to load stats:** `{str(e)}`")

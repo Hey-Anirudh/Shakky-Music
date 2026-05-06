@@ -323,7 +323,7 @@ async def _predownload_queued(chat_id, position):
             logger.info(f"Pre-downloading queued track #{position}: {track.get('title', track_vid)}")
             file_path, _ = await asyncio.wait_for(
                 YouTube.download(track_vid, raw_query=track.get("title")),
-                timeout=45
+                timeout=60
             )
             if file_path and os.path.exists(file_path):
                 track["file"] = file_path

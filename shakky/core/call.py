@@ -655,20 +655,24 @@ class Call(PyTgCalls):
                 if "vid_sp_" in queued and not videoid:
                     try:
                         from shakky import YouTube as YT
-                        search_res = await YT.search(title)
+                        # Clean title: remove hashtags and extra junk for better search accuracy
+                        search_query = re.sub(r'#\w+', '', title).strip()
+                        search_res = await YT.search(search_query or title)
                         if search_res:
                             videoid = search_res["vidid"]
                             db[chat_id][0]["vidid"] = videoid
                             db[chat_id][0]["dur"] = search_res["duration"]
                     except: pass
 
+
                 if not os.path.exists(queued) and videoid:
                     try:
                         from shakky.platforms import YouTube as YT
                         file_path, direct = await asyncio.wait_for(
                             YT.download(videoid, video=video, raw_query=title),
-                            timeout=30
+                            timeout=60 # Increased timeout for VPS stability
                         )
+
                         if file_path and os.path.exists(file_path):
                             queued = file_path
                             db[chat_id][0]["file"] = file_path
@@ -714,8 +718,10 @@ class Call(PyTgCalls):
                     db[chat_id].pop(0)
                     if len(db[chat_id]) > 0:
                         # Recursive call with skip_pop=True
-                        # Resetting _last_skip so recursive call isn't blocked (though we added not skip_pop gate)
+                        # Add a small delay to prevent "Skipping Loop" from wiping the queue instantly
+                        await asyncio.sleep(1.5)
                         return await self.change_stream(client, chat_id, skip_pop=True)
+
                 
                 # If we get here, no playable songs left
                 await _clear_(chat_id)

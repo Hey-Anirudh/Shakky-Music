@@ -47,24 +47,25 @@ from config import BANNED_USERS
 async def global_ban(client, message: Message, _):
     if not message.reply_to_message:
         if len(message.command) != 2:
-            return await message.reply_text(_["general_1"])
+            return await message.reply_text("➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>**Usage:** /gban [username|id]</blockquote>")
     user = await extract_user(message)
     if user.id == message.from_user.id:
-        return await message.reply_text(_["gban_1"])
+        return await message.reply_text("➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ʏᴏᴜ ᴄᴀɴɴᴏᴛ ʙᴀɴ ʏᴏᴜʀsᴇʟғ.</blockquote>")
     elif user.id == app.id:
-        return await message.reply_text(_["gban_2"])
+        return await message.reply_text("➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɪ ᴄᴀɴɴᴏᴛ ʙᴀɴ ᴍʏsᴇʟғ.</blockquote>")
     elif user.id in SUDOERS:
-        return await message.reply_text(_["gban_3"])
+        return await message.reply_text("➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ʏᴏᴜ ᴄᴀɴɴᴏᴛ ʙᴀɴ ᴀɴᴏᴛʜᴇʀ sᴜᴅᴏ ᴜsᴇʀ.</blockquote>")
     is_gbanned = await is_banned_user(user.id)
     if is_gbanned:
-        return await message.reply_text(_["gban_4"].format(user.mention))
+        return await message.reply_text(f"➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>{user.mention} ɪs ᴀʟʀᴇᴀᴅʏ ɢʟᴏʙᴀʟʟʏ ʙᴀɴɴᴇᴅ.</blockquote>")
     if user.id not in BANNED_USERS:
         BANNED_USERS.add(user.id)
     served_chats = []
     chats = await get_served_chats()
     for chat in chats:
         served_chats.append(int(chat["chat_id"]))
-    mystic = await message.reply_text(_["gban_5"].format(user.mention, time_expected))
+    time_expected = get_readable_time(len(served_chats))
+    mystic = await message.reply_text(f"➲ **GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɪɴɪᴛɪᴀᴛɪɴɢ ɢʟᴏʙᴀʟ ʙᴀɴ ғᴏʀ {user.mention}...\n**ᴇxᴘᴇᴄᴛᴇᴅ ᴛɪᴍᴇ:** <code>{time_expected}</code></blockquote>")
     number_of_chats = 0
     for chat_id in served_chats:
         try:
@@ -80,15 +81,13 @@ async def global_ban(client, message: Message, _):
         BANNED_USERS.add(user.id)
         
     await message.reply_text(
-        _["gban_6"].format(
-            app.mention,
-            message.chat.title,
-            message.chat.id,
-            user.mention,
-            user.id,
-            message.from_user.mention,
-            number_of_chats,
-        )
+        f"➲ **NEW GLOBAL BAN**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {user.mention}\n"
+        f"✧ **Banned By:** {message.from_user.mention}\n"
+        f"✧ **Chats Banned:** <code>{number_of_chats}</code>"
+        f"</blockquote>"
     )
     await mystic.delete()
 
@@ -98,11 +97,11 @@ async def global_ban(client, message: Message, _):
 async def global_un(client, message: Message, _):
     if not message.reply_to_message:
         if len(message.command) != 2:
-            return await message.reply_text(_["general_1"])
+            return await message.reply_text("➲ **UN-GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>**Usage:** /ungban [username|id]</blockquote>")
     user = await extract_user(message)
     is_gbanned = await is_banned_user(user.id)
     if not is_gbanned:
-        return await message.reply_text(_["gban_7"].format(user.mention))
+        return await message.reply_text(f"➲ **UN-GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>{user.mention} ɪs ɴᴏᴛ ɢʟᴏʙᴀʟʟʏ ʙᴀɴɴᴇᴅ.</blockquote>")
     if user.id in BANNED_USERS:
         BANNED_USERS.remove(user.id)
     served_chats = []
@@ -110,7 +109,7 @@ async def global_un(client, message: Message, _):
     for chat in chats:
         served_chats.append(int(chat["chat_id"]))
     time_expected = get_readable_time(len(served_chats))
-    mystic = await message.reply_text(_["gban_8"].format(user.mention, time_expected))
+    mystic = await message.reply_text(f"➲ **UN-GBAN SYSTEM**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɪɴɪᴛɪᴀᴛɪɴɢ ɢʟᴏʙᴀʟ ᴜɴʙᴀɴ ғᴏʀ {user.mention}...\n**ᴇxᴘᴇᴄᴛᴇᴅ ᴛɪᴍᴇ:** <code>{time_expected}</code></blockquote>")
     number_of_chats = 0
     for chat_id in served_chats:
         try:
@@ -121,7 +120,7 @@ async def global_un(client, message: Message, _):
         except:
             continue
     await remove_banned_user(user.id)
-    await message.reply_text(_["gban_9"].format(user.mention, number_of_chats))
+    await message.reply_text(f"➲ **GLOBAL UNBAN**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>sᴜᴄᴄᴇssғᴜʟʟʏ ᴜɴʙᴀɴɴᴇᴅ {user.mention} ɢʟᴏʙᴀʟʟʏ.\n**ᴜɴʙᴀɴɴᴇᴅ ɪɴ:** <code>{number_of_chats}</code> ᴄʜᴀᴛs.</blockquote>")
     await mystic.delete()
 
 
@@ -130,9 +129,9 @@ async def global_un(client, message: Message, _):
 async def gbanned_list(client, message: Message, _):
     counts = await get_banned_count()
     if counts == 0:
-        return await message.reply_text(_["gban_10"])
-    mystic = await message.reply_text(_["gban_11"])
-    msg = _["gban_12"]
+        return await message.reply_text("➲ **GBANNED USERS**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɴᴏ ɢʟᴏʙᴀʟʟʏ ʙᴀɴɴᴇᴅ ᴜsᴇʀs ғᴏᴜɴᴅ.</blockquote>")
+    mystic = await message.reply_text("➲ **GBANNED USERS**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ғᴇᴛᴄʜɪɴɢ...</blockquote>")
+    msg = "➲ **GBANNED USERS**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>\n"
     count = 0
     users = await get_banned_users()
     for user_id in users:
@@ -140,12 +139,13 @@ async def gbanned_list(client, message: Message, _):
         try:
             user = await app.get_users(user_id)
             user = user.first_name if not user.mention else user.mention
-            msg += f"{count}➤ {user}\n"
+            msg += f"✧ {count}. {user}\n"
         except Exception:
-            msg += f"{count}➤ {user_id}\n"
+            msg += f"✧ {count}. <code>{user_id}</code>\n"
             continue
+    msg += "</blockquote>"
     if count == 0:
-        return await mystic.edit_text(_["gban_10"])
+        return await mystic.edit_text("➲ **GBANNED USERS**\n━━━━━━━━━━━━━━━━━━━━\n<blockquote>ɴᴏ ɢʟᴏʙᴀʟʟʏ ʙᴀɴɴᴇᴅ ᴜsᴇʀs ғᴏᴜɴᴅ.</blockquote>")
     else:
         return await mystic.edit_text(msg)
 

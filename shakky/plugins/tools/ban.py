@@ -159,9 +159,13 @@ async def kickFunc(_, message: Message):
         )
     mention = (await app.get_users(user_id)).mention
     msg = f"""
-**ᴋɪᴄᴋᴇᴅ ᴜsᴇʀ:** {mention}
-**ᴋɪᴄᴋᴇᴅ ʙʏ:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴᴍᴏᴜs'}
-**ʀᴇᴀsᴏɴ:** {reason or 'ɴᴏ ʀᴇᴀsᴏɴ ᴘʀᴏᴠɪᴅᴇᴅ'}"""
+➲ **USER KICKED**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>
+✧ **Target:** {mention}
+✧ **Actor:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴʏᴍᴏᴜs'}
+✧ **Reason:** {reason or 'ɴᴏ ʀᴇᴀsᴏɴ ᴘʀᴏᴠɪᴅᴇᴅ'}
+</blockquote>"""
     await message.chat.ban_member(user_id)
     replied_message = message.reply_to_message
     if replied_message:
@@ -210,9 +214,13 @@ async def banFunc(_, message: Message):
         )
 
     msg = (
-        f"**ʙᴀɴɴᴇᴅ ᴜsᴇʀ:** {mention}\n"
-        f"**ʙᴀɴɴᴇᴅ ʙʏ:** {message.from_user.mention if message.from_user else 'Anon'}\n"
+        f"➲ **USER BANNED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {mention}\n"
+        f"✧ **Actor:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴʏᴍᴏᴜs'}\n"
     )
+
     if message.command[0][0] == "s":
         await message.reply_to_message.delete()
         await app.delete_user_history(message.chat.id, user_id)
@@ -266,7 +274,15 @@ async def unban_func(_, message: Message):
     replied_message = message.reply_to_message
     if replied_message:
         message = replied_message
-    await message.reply_text(f"ᴜɴʙᴀɴɴᴇᴅ! {umention}")
+    await message.reply_text(
+        f"➲ **USER UNBANNED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {umention}\n"
+        f"✧ **Status:** <code>ʀᴇsᴛᴏʀᴇᴅ</code>"
+        f"</blockquote>"
+    )
+
 
 
 # Promote Members
@@ -305,7 +321,15 @@ async def promoteFunc(_, message: Message):
                 can_manage_video_chats=bot.can_manage_video_chats,
             ),
         )
-        return await message.reply_text(f"ғᴜʟʟʏ ᴘʀᴏᴍᴏᴛᴇᴅ! {umention}")
+        return await message.reply_text(
+            f"➲ **USER PROMOTED**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote>"
+            f"✧ **Target:** {umention}\n"
+            f"✧ **Rights:** <code>ғᴜʟʟ ᴀᴄᴄᴇss</code>"
+            f"</blockquote>"
+        )
+
 
     await message.chat.promote_member(
         user_id=user_id,
@@ -320,7 +344,15 @@ async def promoteFunc(_, message: Message):
             can_manage_video_chats=bot.can_manage_video_chats,
         ),
     )
-    await message.reply_text(f"ᴘʀᴏᴍᴏᴛᴇᴅ! {umention}")
+    await message.reply_text(
+        f"➲ **USER PROMOTED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {umention}\n"
+        f"✧ **Rights:** <code>sᴛᴀɴᴅᴀʀᴅ</code>"
+        f"</blockquote>"
+    )
+
 
 
 # Demote Member
@@ -410,7 +442,15 @@ async def demote(_, message: Message):
                 ),
             )
             umention = (await app.get_users(user_id)).mention
-            await message.reply_text(f"ᴅᴇᴍᴏᴛᴇᴅ! {umention}")
+            await message.reply_text(
+                f"➲ **USER DEMOTED**\n"
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"<blockquote>"
+                f"✧ **Target:** {umention}\n"
+                f"✧ **Status:** <code>sᴛʀɪᴘᴘᴇᴅ</code>"
+                f"</blockquote>"
+            )
+
         else:
             await message.reply_text("ᴛʜᴇ ᴘᴇʀsᴏɴ ʏᴏᴜ ᴍᴇɴᴛɪᴏɴᴇᴅ ɪs ɴᴏᴛ ᴀɴ ᴀᴅᴍɪɴ.")
     except Exception as e:
@@ -457,14 +497,24 @@ async def pin(_, message: Message):
     if message.command[0][0] == "u":
         await r.unpin()
         return await message.reply_text(
-            f"ᴜɴᴘɪɴɴᴇᴅ [ᴛʜɪs]({r.link}) ᴍᴇssᴀɢᴇ.",
+            f"➲ **MESSAGE UNPINNED**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote>"
+            f"✧ **Link:** [ᴄʟɪᴄᴋ ʜᴇʀᴇ]({r.link})"
+            f"</blockquote>",
             disable_web_page_preview=True,
         )
+
     await r.pin(disable_notification=True)
     await message.reply(
-        f"ᴘɪɴɴᴇᴅ [ᴛʜɪs]({r.link}) ᴍᴇssᴀɢᴇ.",
+        f"➲ **MESSAGE PINNED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Link:** [ᴄʟɪᴄᴋ ʜᴇʀᴇ]({r.link})"
+        f"</blockquote>",
         disable_web_page_preview=True,
     )
+
     msg = "ᴘʟᴇᴀsᴇ ᴄʜᴇᴄᴋ ᴛʜᴇ ᴘɪɴɴᴇᴅ ᴍᴇssᴀɢᴇ: ~ " + f"[Check, {r.link}]"
     filter_ = dict(type="text", data=msg)
     await save_filter(message.chat.id, "~pinned", filter_)
@@ -495,9 +545,13 @@ async def mute(_, message: Message):
     mention = (await app.get_users(user_id)).mention
     keyboard = ikb({"🚨  Unmute  🚨": f"unmute_{user_id}"})
     msg = (
-        f"**ᴍᴜᴛᴇᴅ ᴜsᴇʀ:** {mention}\n"
-        f"**ᴍᴜᴛᴇᴅ ʙʏ:** {message.from_user.mention if message.from_user else 'Anon'}\n"
+        f"➲ **USER MUTED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {mention}\n"
+        f"✧ **Actor:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴʏᴍᴏᴜs'}\n"
     )
+
     if message.command[0] == "tmute":
         split = reason.split(None, 1)
         time_value = split[0]
@@ -542,7 +596,15 @@ async def unmute(_, message: Message):
     replied_message = message.reply_to_message
     if replied_message:
         message = replied_message
-    await message.reply_text(f"ᴜɴᴍᴜᴛᴇᴅ! {umention}")
+    await message.reply_text(
+        f"➲ **USER UNMUTED**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {umention}\n"
+        f"✧ **Status:** <code>ʀᴇsᴛᴏʀᴇᴅ</code>"
+        f"</blockquote>"
+    )
+
 
 
 @app.on_message(filters.command(["warn", "swarn"]) & ~filters.private & ~BANNED_USERS)
@@ -587,10 +649,14 @@ async def warn_user(_, message: Message):
     else:
         warn = {"warns": warns + 1}
         msg = f"""
-**ᴡᴀʀɴᴇᴅ ᴜsᴇʀ:** {mention}
-**ᴡᴀʀɴᴇᴅ ʙʏ:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴᴍᴏᴜs'}
-**ʀᴇᴀsᴏɴ :** {reason or 'ɴᴏ ʀᴇᴀsᴏɴ ᴘʀᴏᴠᴏᴅᴇᴅ'}
-**ᴡᴀʀɴs:** {warns + 1}/3"""
+➲ **USER WARNED**
+━━━━━━━━━━━━━━━━━━━━
+<blockquote>
+✧ **Target:** {mention}
+✧ **Actor:** {message.from_user.mention if message.from_user else 'ᴀɴᴏɴʏᴍᴏᴜs'}
+✧ **Reason:** {reason or 'ɴᴏ ʀᴇᴀsᴏɴ ᴘʀᴏᴠᴏᴅᴇᴅ'}
+✧ **Warns:** <code>{warns + 1}/3</code>
+</blockquote>"""
         replied_message = message.reply_to_message
         if replied_message:
             message = replied_message
@@ -638,8 +704,15 @@ async def remove_warnings(_, message: Message):
     if warns == 0 or not warns:
         await message.reply_text(f"{mention} ʜᴀs ɴᴏ ᴡᴀʀɴɪɴɢs.")
     else:
-        await remove_warns(chat_id, await int_to_alpha(user_id))
-        await message.reply_text(f"ʀᴇᴍᴏᴠᴇᴅ ᴡᴀʀɴɪɴɢs ᴏғ {mention}.")
+        await message.reply_text(
+            f"➲ **WARNS REMOVED**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote>"
+            f"✧ **Target:** {mention}\n"
+            f"✧ **Status:** <code>ᴄʟᴇᴀʀᴇᴅ</code>"
+            f"</blockquote>"
+        )
+
 
 
 @app.on_message(filters.command("warns") & ~filters.private & ~BANNED_USERS)
@@ -654,7 +727,15 @@ async def check_warns(_, message: Message):
         warns = warns["warns"]
     else:
         return await message.reply_text(f"{mention} ʜᴀs ɴᴏ ᴡᴀʀɴɪɴɢs.")
-    return await message.reply_text(f"{mention} ʜᴀs {warns}/3 ᴡᴀʀɴɪɴɢs")
+    return await message.reply_text(
+        f"➲ **USER WARNS**\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"<blockquote>"
+        f"✧ **Target:** {mention}\n"
+        f"✧ **Count:** <code>{warns}/3</code>"
+        f"</blockquote>"
+    )
+
 
 
 from pyrogram.errors import FloodWait
