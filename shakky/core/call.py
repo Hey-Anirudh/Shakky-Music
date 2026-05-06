@@ -385,15 +385,19 @@ class Call(PyTgCalls):
         link,
         video: Union[bool, str] = None,
         image: Union[bool, str] = None,
+        payload: dict = None,
     ):
         assistant = await group_assistant(self, chat_id)
         language = await get_lang(chat_id)
         _ = get_string(language)
+        # Build stream
+        ffmpeg_args = payload.get("af", "") if payload else ""
         if video:
             stream = AudioVideoPiped(
                 link,
                 audio_parameters=HighQualityAudio(),
                 video_parameters=MediumQualityVideo(),
+                additional_ffmpeg_parameters=ffmpeg_args,
             )
         else:
             stream = (
@@ -401,9 +405,10 @@ class Call(PyTgCalls):
                     link,
                     audio_parameters=HighQualityAudio(),
                     video_parameters=MediumQualityVideo(),
+                    additional_ffmpeg_parameters=ffmpeg_args,
                 )
                 if video
-                else AudioPiped(link, audio_parameters=HighQualityAudio())
+                else AudioPiped(link, audio_parameters=HighQualityAudio(), additional_ffmpeg_parameters=ffmpeg_args)
             )
         # --- JIT Assistant Metadata Sync ---
         userbot = None
