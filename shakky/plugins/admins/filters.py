@@ -33,13 +33,13 @@ AUDIO_FILTERS = {
     },
     "nightcore": {
         "label": "🌙 Nightcore",
-        "ffmpeg": "asetrate=44100*1.25,aresample=44100,atempo=1.06",
-        "description": "Fast tempo + high pitch",
+        "ffmpeg": "asetrate=44100*1.25,aresample=44100",
+        "description": "Fast tempo + high pitch (1.25x)",
     },
     "slowed_reverb": {
         "label": "🎻 Slowed+Reverb",
-        "ffmpeg": "asetrate=44100*0.85,aresample=44100,aecho=0.8:0.9:500:0.4,aecho=0.8:0.88:250:0.3",
-        "description": "Lo-fi slowed with reverb",
+        "ffmpeg": "asetrate=44100*0.8,aresample=44100,aecho=1.0:0.5:40:0.5",
+        "description": "Lo-fi slowed with atmospheric reverb",
     },
 }
 
