@@ -448,16 +448,16 @@ class Call(PyTgCalls):
             LOGGER.info(f"[join_call] Using Assistant {assistant_id} (@{userbot.me.username}) for Chat {chat_id}")
             
             try:
-                member = await app.get_chat_member(chat_id, assistant_id)
-                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.warning(f"Assistant {assistant_id} is reported as banned/kicked. Attempting unban and proceeding anyway...")
-                    try: await app.unban_chat_member(chat_id, assistant_id)
-                    except: pass
+                # 🛠️ Deep Unban: Explicitly unban to clear any Telegram caches
+                await app.unban_chat_member(chat_id, assistant_id)
+                await asyncio.sleep(0.5)
+                # 🛠️ Force-Add: Ensure they are definitely treated as a member
+                try: await app.add_chat_members(chat_id, assistant_id)
+                except: pass 
             except Exception as e:
-                # If we can't check membership, just log it. We'll try to join anyway.
-                LOGGER.warning(f"Could not verify membership for Assistant {assistant_id}: {e}")
+                LOGGER.warning(f"Deep unban/add failed for Assistant {assistant_id} (likely already in): {e}")
             
-            # 🚀 Force-Proceed: Don't raise. Let pytgcalls handle the actual join.
+            # 🚀 Proceed to join regardless of any status check errors
         except AssistantErr:
             raise
         except Exception as e:
