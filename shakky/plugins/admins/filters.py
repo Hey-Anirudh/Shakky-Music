@@ -104,10 +104,11 @@ async def filters_command(client, message: Message, _, chat_id):
         else "No filter active"
     )
 
+    title = (playing[0].get('title', 'Unknown') if playing else 'Unknown')[:30]
     await message.reply_text(
         f"<blockquote>🎚️ <b>Spatial Audio Filters</b></blockquote>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"✧ <b>Track:</b> <code>{playing[0].get('title', 'Unknown')[:30]}</code>\n"
+        f"✧ <b>Track:</b> <code>{title}</code>\n"
         f"✧ <b>Status:</b> {status_text}\n\n"
         f"<i>Select a filter to apply in real-time:</i>",
         parse_mode=ParseMode.HTML,
@@ -198,6 +199,11 @@ async def apply_filter_callback(client, callback: CallbackQuery):
     except Exception as e:
         return await callback.answer(f"Error: {e}", show_alert=True)
 
+    # Re-fetch playing state to be safe against concurrent pops
+    playing = db.get(chat_id)
+    if not playing:
+        return await callback.answer("➲ Track ended before filter could be applied.")
+
     await callback.edit_message_text(
         f"<blockquote>🎚️ <b>{fdata['label']} Active</b></blockquote>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
@@ -234,10 +240,11 @@ async def filter_menu_callback(client, callback: CallbackQuery):
     )
 
     await callback.answer()
+    title = (playing[0].get('title', 'Unknown') if playing else 'Unknown')[:30]
     await callback.edit_message_text(
         f"<blockquote>🎚️ <b>Spatial Audio Filters</b></blockquote>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
-        f"✧ <b>Track:</b> <code>{playing[0].get('title', 'Unknown')[:30]}</code>\n"
+        f"✧ <b>Track:</b> <code>{title}</code>\n"
         f"✧ <b>Status:</b> {status_text}\n\n"
         f"<i>Select a filter to apply in real-time:</i>",
         parse_mode=ParseMode.HTML,
