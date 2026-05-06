@@ -226,16 +226,43 @@ class Call:
         dur = payload.get("seconds", 0) if payload else 0
         stream = self.build_stream(link, video, payload, dur)
 
-        # Ensure membership
+        # Step 1: Ensure Membership (Enhanced for KICKED handling)
         try:
-            member = await app.get_chat_member(chat_id, userbot.me.id if userbot.me else (await userbot.get_me()).id)
-            if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                await app.unban_chat_member(chat_id, userbot.me.id)
-        except UserNotParticipant:
-            try: await app.add_chat_members(chat_id, userbot.me.id)
-            except: 
-                chat = await app.get_chat(chat_id)
-                if chat.invite_link: await userbot.join_chat(chat.invite_link)
+            if not userbot.me: await userbot.get_me()
+            ass_id = userbot.me.id
+            ass_mention = userbot.me.mention
+            
+            try:
+                member = await app.get_chat_member(chat_id, ass_id)
+                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
+                    LOGGER.info(f"[join_call] Assistant {ass_id} is {member.status}. Attempting unban...")
+                    try:
+                        await app.unban_chat_member(chat_id, ass_id)
+                        await asyncio.sleep(1)
+                        await app.add_chat_members(chat_id, ass_id)
+                    except Exception as e:
+                        LOGGER.error(f"[join_call] Unban/Add failed: {e}")
+                        raise AssistantErr(f"➲ **Assistant {ass_mention} is KICKED/BANNED.**\n\n**Please unban it manually and try again.**")
+            except UserNotParticipant:
+                LOGGER.info(f"[join_call] Assistant {ass_id} not in chat. Adding...")
+                try:
+                    await app.add_chat_members(chat_id, ass_id)
+                except Exception as e:
+                    LOGGER.warning(f"[join_call] Add failed: {e}. Trying invite link...")
+                    chat = await app.get_chat(chat_id)
+                    if chat.invite_link:
+                        await userbot.join_chat(chat.invite_link)
+                    else:
+                        try:
+                            link = await app.export_chat_invite_link(chat_id)
+                            await userbot.join_chat(link)
+                        except:
+                            raise AssistantErr(f"➲ **Assistant not in chat.**\n\n**Please add {ass_mention} manually.**")
+        except AssistantErr: raise
+        except Exception as e:
+            if "KICKED" in str(e).upper():
+                raise AssistantErr(f"➲ **Assistant is KICKED from this chat.**\n\n**Please UNBAN it and try again.**")
+            LOGGER.error(f"[join_call] Membership check failed: {e}")
 
         # Refresh VC state
         try:
