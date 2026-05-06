@@ -10,19 +10,23 @@ from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipan
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 # 🤖 Universal Core Switch (ARM VPS Fix)
 # This block handles v0, v1, v2, and v3 dev versions of pytgcalls.
+IS_V3 = False
+IS_LEGACY = False
+
 try:
     # --- Modern Era (v1, v2, v3) ---
     from pytgcalls import PyTgCalls, StreamType
     from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
-    # Event detection
     try:
-        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
+        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
         IS_V3 = True
     except ImportError:
-        IS_V3 = False
-    IS_LEGACY = False
+        # Fallback for earlier v1/v2
+        class StreamAudioEnded: pass
+        class StreamVideoEnded: pass
+        class StreamDeleted: pass
 except ImportError:
     # --- Legacy Era (v0) ---
     try:
@@ -30,25 +34,36 @@ except ImportError:
         from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
         PyTgCalls = GroupCallFactory # Map for compatibility
         IS_LEGACY = True
-        IS_V3 = False
-        # Legacy dummies
+        class StreamType:
+            pulse_stream = "pulse"
+            pulse = "pulse"
         class HighQualityAudio: pass
         class MediumQualityVideo: pass
+        class Update: pass
+        class StreamAudioEnded: pass
+        class StreamVideoEnded: pass
+        class StreamDeleted: pass
     except ImportError:
         # Fallback for dev-specific paths
         try:
             from pytgcalls.pytgcalls import PyTgCalls
             from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
-            IS_V3 = False
-            IS_LEGACY = False
-            # Qualities might still be missing in some dev builds
-            try:
-                from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
-            except ImportError:
-                class HighQualityAudio: pass
-                class MediumQualityVideo: pass
         except ImportError:
             raise ImportError("Critical: No compatible PyTgCalls found. Run ./vps_fix.sh")
+
+# Ensure all types are at least defined to prevent NameError
+if "StreamAudioEnded" not in globals():
+    class StreamAudioEnded: pass
+if "StreamVideoEnded" not in globals():
+    class StreamVideoEnded: pass
+if "StreamDeleted" not in globals():
+    class StreamDeleted: pass
+if "Update" not in globals():
+    class Update: pass
+if "StreamType" not in globals():
+    class StreamType:
+        pulse_stream = "pulse"
+        pulse = "pulse"
 
 from pytgcalls.exceptions import (
     AlreadyJoinedError,
@@ -1166,62 +1181,60 @@ class Call(PyTgCalls):
             await self.five.start()
 
     async def decorators(self):
-        @self.one.on_kicked()
-        @self.two.on_kicked()
-        @self.three.on_kicked()
-        @self.four.on_kicked()
-        @self.five.on_kicked()
-        @self.one.on_closed_voice_chat()
-        @self.two.on_closed_voice_chat()
-        @self.three.on_closed_voice_chat()
-        @self.four.on_closed_voice_chat()
-        @self.five.on_closed_voice_chat()
-        @self.one.on_left()
-        @self.two.on_left()
-        @self.three.on_left()
-        @self.four.on_left()
-        @self.five.on_left()
+        # Helper to safely register decorators
+        def register_handler(client, event_name, handler):
+            if not client: return
+            try:
+                method = getattr(client, event_name, None)
+                if method:
+                    method()(handler)
+                else:
+                    LOGGER.debug(f"[decorators] {event_name} not supported by this pytgcalls version.")
+            except Exception as e:
+                LOGGER.warning(f"[decorators] Failed to register {event_name}: {e}")
+
         async def stream_services_handler(_, chat_id: int):
             await self.stop_stream(chat_id)
 
-        @self.one.on_stream_end()
-        @self.two.on_stream_end()
-        @self.three.on_stream_end()
-        @self.four.on_stream_end()
-        @self.five.on_stream_end()
+        # Register service handlers
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if not ass: continue
+            register_handler(ass, "on_kicked", stream_services_handler)
+            register_handler(ass, "on_closed_voice_chat", stream_services_handler)
+            register_handler(ass, "on_left", stream_services_handler)
+
         async def stream_end_handler1(client, update: Update):
             update_type = type(update).__name__
             chat_id = getattr(update, 'chat_id', None)
             LOGGER.info(f"[on_stream_end] Received update type={update_type} chat={chat_id}")
 
             if not chat_id:
-                LOGGER.warning(f"[on_stream_end] No chat_id on update {update_type}, ignoring.")
                 return
 
-            # Only act on genuine end-of-stream events
-            if not isinstance(update, (StreamAudioEnded, StreamVideoEnded)):
-                # StreamDeleted also means the stream is gone
-                try:
-                    from pytgcalls.types.stream import StreamDeleted
-                    if isinstance(update, StreamDeleted):
-                        LOGGER.info(f"[on_stream_end] StreamDeleted for {chat_id}, treating as stream end.")
-                    else:
-                        LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
-                        return
-                except ImportError:
-                    LOGGER.debug(f"[on_stream_end] Ignoring non-end update {update_type} for {chat_id}")
-                    return
+            # Check for end of stream
+            is_end = False
+            if IS_V3:
+                if isinstance(update, (StreamAudioEnded, StreamVideoEnded, StreamDeleted)):
+                    is_end = True
+            else:
+                # In legacy versions, we might need to check update properties or specific classes
+                if update_type in ["StreamAudioEnded", "StreamVideoEnded", "StreamDeleted"]:
+                    is_end = True
+            
+            if not is_end:
+                return
 
             LOGGER.info(f"[on_stream_end] Processing stream end for chat {chat_id}")
             try:
-                # Disconnect execution from the event loop using create_task
                 asyncio.create_task(self.change_stream(client, chat_id))
             except Exception as e:
-                LOGGER.error(f"[on_stream_end] change_stream failed for {chat_id}: {e}")
-                try:
-                    await self.stop_stream(chat_id)
-                except:
-                    pass
+                LOGGER.error(f"[on_stream_end] change_stream failed: {e}")
+                await self.stop_stream(chat_id)
+
+        # Register stream end handlers
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if not ass: continue
+            register_handler(ass, "on_stream_end", stream_end_handler1)
 
 
 
