@@ -112,7 +112,7 @@ except ImportError:
                         
                         # Create a unique pipe path to avoid conflicts
                         ts = int(time.time())
-                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.raw")
+                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.wav")
                         
                         try: os.mkfifo(pipe_path)
                         except: pass
@@ -253,7 +253,8 @@ class Call:
             
             # We move seek_arg BEFORE -i for much faster seeking (Input Seeking)
             # Added -vn to ensure no video stream is processed for audio pipes
-            return f'ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i "{path}" {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1'
+            # Switched to WAV format to ensure the legacy engine recognizes the stream header
+            return f'ffmpeg -y -loglevel panic {seek_arg} {re_arg} -i "{path}" {filter_arg} -vn -f wav pipe:1'
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
