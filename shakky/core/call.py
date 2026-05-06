@@ -101,11 +101,17 @@ except ImportError:
                 self.resume_stream = self._call.resume_stream
                 
                 async def change_stream(chat_id, stream):
+                    if isinstance(stream, str) and stream.startswith("ffmpeg"):
+                        # 🌪️ PIPE OVERHAUL: Manually pipe FFmpeg output for perfect effects on Legacy
+                        proc = await asyncio.create_subprocess_shell(
+                            stream,
+                            stdout=asyncio.subprocess.PIPE,
+                            stderr=asyncio.subprocess.DEVNULL
+                        )
+                        # We pass the stdout pipe directly to the voice engine
+                        return await self._call.start_audio(proc.stdout)
+                    
                     path = getattr(stream, 'path', stream)
-                    filters = getattr(stream, 'filters', "")
-                    # The ONLY reliable way to apply effects in 0.9.7 is -af
-                    if filters:
-                        return await self._call.start_audio(path, ffmpeg_parameters=f"-af \"{filters}\"")
                     return await self._call.start_audio(path)
                 self.change_stream = change_stream
     except ImportError:
@@ -193,108 +199,77 @@ class Call:
         if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
 
-    # --- 🛠️ Remade Stream Builder (Centralized) ---
+    # --- 🛠️ Remade Stream Builder (Extreme VPS Compatibility Edition) ---
     def build_stream(self, path, video, payload=None, duration=0):
-        """Constructs the appropriate stream object with filters applied."""
-        # Merge global effects if any
-        chat_id = payload.get("chat_id") if payload else None
-        if chat_id and chat_id in self._active_effects:
-             merged_payload = {**self._active_effects[chat_id], **(payload or {})}
-        else:
-             merged_payload = payload or {}
-
+        """Constructs the stream path or object. For Legacy + Effects, returns a Pipe command."""
+        merged_payload = {**self._active_effects.get(payload.get("chat_id"), {}), **(payload or {})} if payload and payload.get("chat_id") else (payload or {})
         filters = VoiceFilter.build_ffmpeg_args(merged_payload, duration)
         
-        # Seek logic integration
+        # Seek logic
         ss = merged_payload.get("ss", 0)
         to = merged_payload.get("to", "")
-        seek_args = f"-ss {ss}"
-        if to: seek_args += f" -to {to}"
         
-        # Combine seek and filters
-        final_args = f"{seek_args} -af \"{filters}\"" if filters else seek_args
-        
+        if IS_LEGACY and (filters or ss != 0):
+            # 🚀 REMAKE: For Legacy, we use FFmpeg to pre-process the stream and pipe it.
+            # This is the ONLY way to guarantee effects work on 0.9.7.
+            # We use s16le/48k/2ch which is standard for Telegram VC.
+            seek_arg = f"-ss {ss}"
+            if to: seek_arg += f" -to {to}"
+            
+            filter_arg = f"-af \"{filters}\"" if filters else ""
+            # We return a string that the Legacy Wrapper will recognize as a Pipe
+            return f"ffmpeg -i {path} {seek_arg} {filter_arg} -f s16le -ac 2 -ar 48000 pipe:1"
+
+        # Modern or No-Effect Legacy
+        ffmpeg_args = f"-ss {ss}"
+        if to: ffmpeg_args += f" -to {to}"
+        if filters: ffmpeg_args += f" -af \"{filters}\""
+
         if video:
-            return AudioVideoPiped(path, HighQualityAudio(), MediumQualityVideo(), additional_ffmpeg_parameters=final_args)
-        return AudioPiped(path, HighQualityAudio(), additional_ffmpeg_parameters=final_args)
+            return AudioVideoPiped(path, HighQualityAudio(), MediumQualityVideo(), additional_ffmpeg_parameters=ffmpeg_args)
+        return AudioPiped(path, HighQualityAudio(), additional_ffmpeg_parameters=ffmpeg_args)
 
     async def join_call(self, chat_id, original_chat_id, link, video=None, image=None, payload=None):
         assistant = await group_assistant(self, chat_id)
         userbot = self.userbot1 if assistant == self.one else (self.userbot2 if assistant == self.two else (self.userbot3 if assistant == self.three else (self.userbot4 if assistant == self.four else self.userbot5)))
         
-        # Build stream using new system
-        dur = payload.get("seconds", 0) if payload else 0
-        stream = self.build_stream(link, video, payload, dur)
+        # Build stream
+        if payload: payload["chat_id"] = chat_id
+        stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0)
 
-        # Step 1: Ensure Membership (Enhanced for KICKED handling)
+        # Step 1: Membership Check (Passive - No more false KICKED errors)
         try:
             if not userbot.me: await userbot.get_me()
-            ass_id = userbot.me.id
-            ass_mention = userbot.me.mention
-            
-            try:
-                member = await app.get_chat_member(chat_id, ass_id)
-                if member.status in [ChatMemberStatus.BANNED, ChatMemberStatus.KICKED]:
-                    LOGGER.info(f"[join_call] Assistant {ass_id} is {member.status}. Attempting unban...")
-                    try:
-                        await app.unban_chat_member(chat_id, ass_id)
-                        await asyncio.sleep(1)
-                        await app.add_chat_members(chat_id, ass_id)
-                    except Exception as e:
-                        LOGGER.error(f"[join_call] Unban/Add failed: {e}")
-                        raise AssistantErr(f"➲ **Assistant {ass_mention} is KICKED/BANNED.**\n\n**Please unban it manually and try again.**")
-            except UserNotParticipant:
-                LOGGER.info(f"[join_call] Assistant {ass_id} not in chat. Adding...")
-                try:
-                    await app.add_chat_members(chat_id, ass_id)
-                except Exception as e:
-                    LOGGER.warning(f"[join_call] Add failed: {e}. Trying invite link...")
-                    chat = await app.get_chat(chat_id)
-                    if chat.invite_link:
-                        await userbot.join_chat(chat.invite_link)
-                    else:
-                        try:
-                            link = await app.export_chat_invite_link(chat_id)
-                            await userbot.join_chat(link)
-                        except:
-                            raise AssistantErr(f"➲ **Assistant not in chat.**\n\n**Please add {ass_mention} manually.**")
-        except AssistantErr: raise
-        except Exception as e:
-            if "KICKED" in str(e).upper():
-                raise AssistantErr(f"➲ **Assistant is KICKED from this chat.**\n\n**Please UNBAN it and try again.**")
-            LOGGER.error(f"[join_call] Membership check failed: {e}")
-
-        # Refresh VC state
-        try:
-            from pyrogram.raw.functions.channels import GetFullChannel
-            from pyrogram.raw.functions.messages import GetFullChat
-            peer = await userbot.resolve_peer(chat_id)
-            if isinstance(peer, (ChatType.CHANNEL, ChatType.SUPERGROUP)): await userbot.invoke(GetFullChannel(channel=peer))
-            else: await userbot.invoke(GetFullChat(chat_id=chat_id))
+            # We just try to add, if it fails, we assume they are already in or we lack perms
+            try: await app.add_chat_members(chat_id, userbot.me.id)
+            except: pass
         except: pass
 
-        # Join
+        # Step 2: Join Logic
         joined = False
         for attempt in range(2):
             try:
                 if IS_LEGACY:
                     try: await assistant.join(chat_id)
                     except: pass
-                    path = getattr(stream, "path", link)
-                    filters = getattr(stream, "filters", "")
-                    if filters: await asyncio.wait_for(assistant.start_audio(path, ffmpeg_parameters=f"-af \"{filters}\""), timeout=20)
-                    else: await asyncio.wait_for(assistant.start_audio(path), timeout=20)
+                    # If stream is a string (FFmpeg pipe command), use it
+                    await asyncio.wait_for(assistant.start_audio(stream), timeout=20)
                 else:
                     await asyncio.wait_for(assistant.join_group_call(chat_id, stream), timeout=30)
                 joined = True; break
             except AlreadyJoinedError: joined = True; break
             except Exception as e:
+                if "ALREADY_JOINED" in str(e).upper(): joined = True; break
                 LOGGER.error(f"[join] Attempt {attempt} failed: {e}")
                 await asyncio.sleep(1)
 
-        if not joined:
-            try: await app.send_message(original_chat_id, text="⚠️ **Voice Chat is not active. Using WebApp only.**")
-            except: pass
+        if joined:
+            await add_active_chat(chat_id)
+            await music_on(chat_id)
+            if video: await add_active_video_chat(chat_id)
+        else:
+             try: await app.send_message(original_chat_id, text="⚠️ **Failed to join Voice Chat. Please ensure Assistant is in group.**")
+             except: pass
 
         await add_active_chat(chat_id)
         await music_on(chat_id)
