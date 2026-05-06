@@ -47,7 +47,8 @@ async def start_ai_recommendation(chat_id, user_id=None, user_name="AI", silent=
             chat_id,
             user_name,
             chat_id,
-            streamtype="youtube"
+            streamtype="youtube",
+            is_prodj=silent # If it's silent, it's a Pro-DJ auto-transition
         )
             
     except Exception as e:
