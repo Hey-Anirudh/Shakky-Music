@@ -116,12 +116,12 @@ except ImportError:
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
                         # 🌪️ DIRECT OUTPUT UPDATE: Robust Legacy Engine
                         
-                        # 1. Stop current audio if possible to reset the engine
+                        # 1. Stop current audio if possible
                         if hasattr(self._call, "stop_audio"):
                             try: await self._call.stop_audio()
                             except: pass
                         
-                        # 2. Cleanup old process for this chat
+                        # 2. Cleanup old process
                         if self._parent and chat_id in self._parent._chat_procs:
                             try: 
                                 proc = self._parent._chat_procs[chat_id]
@@ -131,32 +131,35 @@ except ImportError:
                         
                         # 3. Create a unique pipe path
                         ts = int(time.time() * 1000)
-                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.wav")
+                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.pcm")
                         
                         if hasattr(os, "mkfifo"):
                             try: os.mkfifo(pipe_path)
                             except: pass
                         
-                        # 4. Prepare and start FFmpeg
-                        final_cmd = stream.replace("pipe:1", f'"{pipe_path}"')
-                        proc = await asyncio.create_subprocess_shell(
-                            final_cmd,
+                        # 4. Prepare and start FFmpeg with shlex parsing for safety
+                        import shlex
+                        final_cmd = stream.replace("pipe:1", pipe_path)
+                        args = shlex.split(final_cmd)
+                        
+                        proc = await asyncio.create_subprocess_exec(
+                            *args,
                             stdout=asyncio.subprocess.DEVNULL,
                             stderr=asyncio.subprocess.DEVNULL
                         )
                         if self._parent: self._parent._chat_procs[chat_id] = proc
                         
-                        # 5. Wait for the pipe to be ready for reading
-                        await asyncio.sleep(2.0)
+                        # 5. Wait for the pipe to be ready
+                        await asyncio.sleep(2.5)
                         
-                        # 6. Start the new audio stream
+                        # 6. Start the new audio stream (Raw PCM path)
                         try:
+                            # We don't await this as start_audio in v0.9.x might be blocking or weird
                             return await self._call.start_audio(pipe_path)
                         except Exception as e:
                             LOGGER.error(f"Legacy start_audio failed: {e}")
                             return False
                     
-                    # No-effect path
                     if hasattr(self._call, "stop_audio"):
                         try: await self._call.stop_audio()
                         except: pass
@@ -271,15 +274,15 @@ class Call:
         to = merged_payload.get("to", "")
         
         if IS_LEGACY and (filters or ss != 0):
-            # 🚀 REMAKE: For Legacy, we use FFmpeg to pre-process the stream and pipe it.
+            # 🚀 REMAKE: For Legacy, we use Raw PCM for maximum stability
             seek_arg = f"-ss {ss}"
             if to: seek_arg += f" -to {to}"
             
             filter_arg = f"-af \"{filters}\"" if filters else ""
+            re_arg = "-re" if str(path).startswith("http") else ""
             
-            # Use WAV format for legacy compatibility, -vn for audio only
-            # No -re to prevent pipe underflow during heavy filtering
-            return f'ffmpeg -y -loglevel panic {seek_arg} -i "{path}" {filter_arg} -vn -f wav pipe:1'
+            # Switched to Raw PCM (s16le) as some legacy versions struggle with WAV headers in pipes
+            return f'ffmpeg -y -loglevel panic {re_arg} {seek_arg} -i "{path}" {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1'
 
         # Modern or No-Effect Legacy
         ffmpeg_args = f"-ss {ss}"
