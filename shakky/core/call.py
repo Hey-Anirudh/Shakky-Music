@@ -18,55 +18,40 @@ from pytgcalls.exceptions import (
     TelegramServerError,
 )
 
-# --- 🎭 Remade Effects System (The Core of the Overhaul) ---
+# --- 🎭 Premium Spatial Audio Engine (v2.0) ---
 class VoiceFilter:
-    """Centralized registry and composer for all audio/video effects."""
+    """Refined registry for professional audio/video effects."""
     
-    # Static Filter Library
     PRESETS = {
-        "bass_boost": "equalizer=f=60:width_type=h:width=50:g=12,equalizer=f=120:width_type=h:width=100:g=6",
-        "8d_audio": "apulsator=mode=sine:hz=0.09:amount=0.8,aecho=0.8:0.88:60:0.4",
-        "nightcore": "asetrate=48000*1.25,aresample=48000",
-        "slowed_reverb": "asetrate=48000*0.8,aresample=48000,aecho=0.8:0.88:60:0.4",
-        "echo": "aecho=0.8:0.88:60:0.4",
+        "bass_boost": "equalizer=f=60:width_type=h:width=50:g=15,equalizer=f=120:width_type=h:width=100:g=8",
+        "8d_audio": "apulsator=mode=sine:hz=0.1:amount=0.9,aecho=0.8:0.88:60:0.4",
+        "nightcore": "asetrate=48000*1.25,aresample=48000,atempo=1.0",
+        "slowed_reverb": "asetrate=48000*0.8,aresample=48000,aecho=0.8:0.9:1000:0.3",
         "reverb": "aecho=0.8:0.88:60:0.4",
         "fade_in": "afade=t=in:ss=0:d=2",
-        "fade_out": "afade=t=out:st={dur_sec}-2:d=2",
     }
 
     @classmethod
-    def build_ffmpeg_args(cls, payload: dict, duration_sec: int = 0) -> str:
-        """
-        Translates a logic payload into a raw FFmpeg filter string.
-        Payload keys: 'af' (preset key or raw string), 'speed', 'fade_in', 'fade_out'
-        """
-        if not payload:
-            return ""
-            
+    def build_ffmpeg_args(cls, payload: dict) -> str:
+        """Translates payload to FFmpeg filter string."""
+        if not payload: return ""
         filters = []
         
-        # 1. Base Effects / Presets
+        # 1. Base Effects
         af = payload.get("af")
-        if af:
-            preset = cls.PRESETS.get(af)
-            if preset:
-                filters.append(preset)
-            else:
-                # Assume raw FFmpeg string
-                filters.append(af)
-        
-        # 2. Dynamic Transitions
-        if payload.get("fade_in") or payload.get("is_prodj"):
-            filters.append(cls.PRESETS["fade_in"])
-        
-        if payload.get("fade_out") and duration_sec > 10:
-            filters.append(cls.PRESETS["fade_out"].format(dur_sec=duration_sec))
+        if af and af in cls.PRESETS:
+            filters.append(cls.PRESETS[af])
+        elif af:
+            filters.append(af) # Raw string
             
-        # 3. Playback Speed (Independent of pitch)
-        speed = payload.get("speed", 1.0)
+        # 2. Dynamic Transitions
+        if payload.get("fade_in"):
+            filters.append(cls.PRESETS["fade_in"])
+            
+        # 3. Speed Control (Independent)
+        speed = float(payload.get("speed", 1.0))
         if speed != 1.0:
-            # Handle speed outside 0.5-2.0 range by chaining atempo
-            s = float(speed)
+            s = speed
             while s > 2.0:
                 filters.append("atempo=2.0")
                 s /= 2.0
@@ -250,9 +235,9 @@ class Call:
         self.five = _init_ass(self.userbot5)
         self._locks = {}
         self._last_skip = {}
-        self._active_effects = {} # chat_id -> effect_payload
-        self._switching = set() # Tracks chats currently applying filters to ignore transient "end" events
-        self._chat_procs = {} # chat_id -> FFmpeg subprocess for legacy piping
+        self._active_effects = {} # chat_id -> payload
+        self._switching = set() # Tracks chats currently re-syncing to ignore transient "end" events
+        self._chat_procs = {} # chat_id -> FFmpeg subprocess
 
     def get_lock(self, chat_id: int):
         if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
@@ -260,31 +245,24 @@ class Call:
 
     # --- 🛠️ Remade Stream Builder (Extreme VPS Compatibility Edition) ---
     def build_stream(self, path, video, payload=None, duration=0, chat_id=None):
-        """Constructs the stream path or object. For Legacy + Effects, returns a Pipe command."""
-        # Merge global effects if any
-        if chat_id and chat_id in self._active_effects:
-             merged_payload = {**self._active_effects[chat_id], **(payload or {})}
-        else:
-             merged_payload = payload or {}
-
-        filters = VoiceFilter.build_ffmpeg_args(merged_payload, duration)
+        """Constructs the stream path or object with premium filters."""
+        # Sync with global chat effects
+        merged = {**(self._active_effects.get(chat_id, {})), **(payload or {})}
+        filters = VoiceFilter.build_ffmpeg_args(merged)
         
-        # Seek logic
-        ss = merged_payload.get("ss", 0)
-        to = merged_payload.get("to", "")
+        ss = merged.get("ss", 0)
+        to = merged.get("to", "")
         
         if IS_LEGACY and (filters or ss != 0):
-            # 🚀 REMAKE: For Legacy, we use Raw PCM for maximum stability
+            # 🚀 Legacy Pipe Engine
             seek_arg = f"-ss {ss}"
             if to: seek_arg += f" -to {to}"
             
             filter_arg = f"-af \"{filters}\"" if filters else ""
             re_arg = "-re" if str(path).startswith("http") else ""
-            
-            # Switched to Raw PCM (s16le) as some legacy versions struggle with WAV headers in pipes
             return f'ffmpeg -y -loglevel panic {re_arg} {seek_arg} -i "{path}" {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1'
 
-        # Modern or No-Effect Legacy
+        # Modern or No-Filter Legacy
         ffmpeg_args = f"-ss {ss}"
         if to: ffmpeg_args += f" -to {to}"
         if filters: ffmpeg_args += f" -af \"{filters}\""
@@ -333,21 +311,25 @@ class Call:
              except: pass
 
     async def apply_audio_filter(self, chat_id: int, filter_key: str, playing: list):
-        """Applies a specific audio filter in real-time by re-syncing the stream."""
+        """Applies a premium audio filter in real-time."""
         if not playing: return
-        
         self._switching.add(chat_id)
         try:
-            # Update active effect state
             if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
-            
-            if filter_key:
-                # Store the filter key or raw ffmpeg string
-                self._active_effects[chat_id]["af"] = filter_key 
-            else:
-                self._active_effects[chat_id].pop("af", None)
+            if filter_key: self._active_effects[chat_id]["af"] = filter_key
+            else: self._active_effects[chat_id].pop("af", None)
+            await self._sync_stream(chat_id, playing)
+        finally:
+            await asyncio.sleep(2)
+            self._switching.discard(chat_id)
 
-            # Sync stream
+    async def speedup_stream(self, chat_id, speed, playing):
+        """Modifies playback speed."""
+        if not playing: return
+        self._switching.add(chat_id)
+        try:
+            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
+            self._active_effects[chat_id]["speed"] = float(speed)
             await self._sync_stream(chat_id, playing)
         finally:
             await asyncio.sleep(2)
@@ -365,20 +347,6 @@ class Call:
         self._switching.add(chat_id)
         try:
             playing[0]["start_time"] = time.time() - to_seek
-            await self._sync_stream(chat_id, playing)
-        finally:
-            await asyncio.sleep(2)
-            self._switching.discard(chat_id)
-
-    async def speedup_stream(self, chat_id, file_path, speed, playing):
-        """Changes the playback speed of the current stream."""
-        if not playing: return
-        
-        self._switching.add(chat_id)
-        try:
-            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
-            self._active_effects[chat_id]["speed"] = float(speed)
-            
             await self._sync_stream(chat_id, playing)
         finally:
             await asyncio.sleep(2)
@@ -427,6 +395,30 @@ class Call:
                 else: await set_loop(chat_id, loop - 1)
                 
                 if not check:
+                    # --- Smart Auto-DJ Logic ---
+                    try:
+                        from shakky.platforms import youtube
+                        # Get the last played track from the chat context (popped earlier)
+                        last_track = popped if 'popped' in locals() else None
+                        if last_track and last_track.get("vidid"):
+                            related = await youtube.get_related(last_track["vidid"], last_track["title"])
+                            if related:
+                                await app.send_message(
+                                    chat_id,
+                                    text=f"✨ **Auto-DJ: Keeping the vibe alive with {related['title']}**",
+                                )
+                                from shakky.utils.stream.stream import put_queue
+                                await put_queue(
+                                    chat_id, last_track["chat_id"], f"vid_{related['vidid']}",
+                                    related['title'], related['duration'], "Auto-DJ",
+                                    related['vidid'], 0, "audio"
+                                )
+                                # Re-check and continue
+                                check = db.get(chat_id)
+                                if check: return await self.change_stream(client, chat_id, skip_pop=True)
+                    except Exception as e:
+                        LOGGER.error(f"Auto-DJ failed: {e}")
+
                     await _clear_(chat_id)
                     try:
                         if IS_LEGACY: await client.leave(chat_id)
@@ -453,8 +445,7 @@ class Call:
                     if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
                 await _clear_(chat_id); return
 
-            payload = {"is_prodj": True} if chat_id in self._active_effects else {}
-            stream = self.build_stream(queued, video, payload, track.get("seconds", 0), chat_id=chat_id)
+            stream = self.build_stream(queued, video, {}, track.get("seconds", 0), chat_id=chat_id)
             
             try:
                 track["start_time"] = time.time()
@@ -498,15 +489,37 @@ class Call:
         await notify_webapp(chat_id, action="stop")
 
     async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, mention):
+        """Dynamic Aura Card: Premium Now Playing UI."""
         try:
-            dur = db[chat_id][0].get("dur", "0:00")
+            track = db[chat_id][0]
+            dur = track.get("dur", "0:00")
             thumb = await get_thumb(videoid, title, dur, user, chat_id)
             markup = stream_markup(None, chat_id)
-            cap = f"▷ **Now Playing**\n━━━━━━━━━━━━━━━━━━\n✧ **Track:** `{title[:30]}`\n✧ **Duration:** `{dur}`\n✧ **By:** {user}"
-            if mention: cap += f"\n✧ **Skipped By:** {mention}"
-            msg = await app.send_photo(original_chat_id, photo=thumb, caption=cap, reply_markup=InlineKeyboardMarkup(markup))
-            db[chat_id][0]["mystic"] = msg
-        except: pass
+            
+            # Aura Styling: Use blockquotes and vibrant indicators
+            current_effect = self._active_effects.get(chat_id, {}).get("af")
+            effect_text = f"\n✧ **Effect:** `{' '.join(current_effect.split('_')).title()}`" if current_effect else ""
+            
+            caption = (
+                f"<blockquote><b>▷ Now Playing</b></blockquote>\n"
+                f"━━━━━━━━━━━━━━━━━━\n"
+                f"✧ **Track:** <code>{title[:30]}</code>\n"
+                f"✧ **Duration:** <code>{dur}</code>\n"
+                f"✧ **By:** {user}"
+                f"{effect_text}"
+            )
+            if mention:
+                caption += f"\n✧ **Skipped By:** {mention}"
+                
+            msg = await app.send_photo(
+                original_chat_id,
+                photo=thumb,
+                caption=caption,
+                reply_markup=InlineKeyboardMarkup(markup)
+            )
+            track["mystic"] = msg
+        except Exception as e:
+            LOGGER.error(f"Aura Card send failed: {e}")
 
     async def start(self):
         for ass in [self.one, self.two, self.three, self.four, self.five]:

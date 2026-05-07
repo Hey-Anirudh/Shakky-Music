@@ -132,8 +132,7 @@ async def stream(
                     file_path,
                     video=status,
                     image=thumbnail,
-                    # Add subtle fade-in for Pro-DJ tracks
-                    payload={"af": "afade=t=in:ss=0:d=1.5"} if kwargs.get("is_prodj") else None
+                    payload=None
                 )
                 current = db[chat_id][0]
                 current["start_time"] = time.time()
@@ -298,10 +297,10 @@ async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_na
         
         button = stream_markup(_, chat_id)
         msg_text = (
-            f"▷ **Now Playing**\n"
+            f"<blockquote><b>▷ Now Playing</b></blockquote>\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"✧ **Track:** `{title[:28]}`\n"
-            f"✧ **Duration:** `{duration_min}`\n"
+            f"✧ **Track:** <code>{title[:28]}</code>\n"
+            f"✧ **Duration:** <code>{duration_min}</code>\n"
             f"✧ **By:** {user_name}"
         )
         try:

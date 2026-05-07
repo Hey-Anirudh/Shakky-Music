@@ -522,6 +522,48 @@ class YouTubeAPI:
             logger.error(f"Error in _fetch_via_youmusicbot: {e}")
             return None
 
+    async def get_related(self, video_id: str, title: str) -> Optional[Dict]:
+        """Fetch a related/recommended track from YouTube (Auto-DJ)."""
+        try:
+            from youtubesearchpython.__future__ import Video
+            
+            # Try getting suggestions from the current video
+            try:
+                video_details = Video.get(f"https://www.youtube.com/watch?v={video_id}")
+                suggestions = video_details.get("suggestions", [])
+                if suggestions:
+                    # Pick a high-quality suggestion (avoid shorts/extremely short clips)
+                    for sug in suggestions[:10]:
+                        if sug.get("id") and sug.get("title"):
+                            # Simple heuristic: title shouldn't be too short
+                            if len(sug["title"]) > 10:
+                                return {
+                                    "title": sug["title"],
+                                    "vidid": sug["id"],
+                                    "duration": sug.get("duration", "4:00"),
+                                    "thumbnail_url": sug.get("thumbnails", [{}])[0].get("url")
+                                }
+            except: pass
+            
+            # Fallback: search for the title and pick something else
+            search_query = f"related to {title} music"
+            async with self._search_semaphore:
+                results = VideosSearch(search_query, limit=5)
+                search_result = await results.next()
+                if search_result.get("result"):
+                    for res in search_result["result"]:
+                        if res.get("id") != video_id:
+                            return {
+                                "title": res.get("title"),
+                                "vidid": res.get("id"),
+                                "duration": res.get("duration", "4:00"),
+                                "thumbnail_url": res.get("thumbnails", [{}])[0].get("url")
+                            }
+            return None
+        except Exception as e:
+            logger.error(f"Auto-DJ fetch failed: {e}")
+            return None
+
     async def search(self, query: str):
         """Search YouTube for a query and return metadata with high precision (STEP 1)"""
         try:

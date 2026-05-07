@@ -76,7 +76,7 @@ def stream_markup_timer(_, chat_id, played, dur):
         ],
         [
             InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
-            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
@@ -102,7 +102,7 @@ def telegram_markup_timer(_, chat_id, played, dur):
         ],
         [
             InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
-            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
@@ -114,7 +114,7 @@ def stream_markup(_, chat_id):
         ],
         [
             InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
-            InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
+            InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
     return buttons
