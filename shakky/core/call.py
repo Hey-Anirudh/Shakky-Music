@@ -434,14 +434,20 @@ class Call:
             file_path = os.path.join("downloads", file_name)
             await generate_shoutout(script, file_path)
             
-            # 3. Play via Secondary Assistant (to avoid blocking main assistant if possible)
-            # For simplicity and sync, we'll use the main assistant but pause music briefly
+            # 3. Play via Main Assistant
             ass = await group_assistant(self, chat_id)
             if os.path.exists(file_path):
                 # Start the intro
-                await ass.change_stream(chat_id, file_path)
+                stream = file_path
+                if not IS_LEGACY:
+                    from pytgcalls.types.input_stream import AudioPiped
+                    from pytgcalls.types.input_stream.quality import HighQualityAudio
+                    stream = AudioPiped(file_path, HighQualityAudio())
+                
+                await ass.change_stream(chat_id, stream)
                 await asyncio.sleep(8) # Wait for intro to finish
-                os.remove(file_path)
+                try: os.remove(file_path)
+                except: pass
         except Exception as e:
             LOGGER.error(f"Podcast Intro failed: {e}")
 
