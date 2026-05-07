@@ -114,25 +114,31 @@ except ImportError:
                 
                 async def change_stream(chat_id, stream):
                     if isinstance(stream, str) and stream.startswith("ffmpeg"):
-                        # 🌪️ DIRECT OUTPUT UPDATE: Avoiding shell redirection
+                        # 🌪️ DIRECT OUTPUT UPDATE: Robust Legacy Engine
                         
-                        # Cleanup old process for this chat
-                        if self._parent and chat_id in self._parent._chat_procs:
-                            try: self._parent._chat_procs[chat_id].terminate()
+                        # 1. Stop current audio if possible to reset the engine
+                        if hasattr(self._call, "stop_audio"):
+                            try: await self._call.stop_audio()
                             except: pass
                         
-                        # Create a unique pipe path to avoid conflicts
-                        ts = int(time.time())
+                        # 2. Cleanup old process for this chat
+                        if self._parent and chat_id in self._parent._chat_procs:
+                            try: 
+                                proc = self._parent._chat_procs[chat_id]
+                                proc.kill()
+                                await proc.wait()
+                            except: pass
+                        
+                        # 3. Create a unique pipe path
+                        ts = int(time.time() * 1000)
                         pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.wav")
                         
                         if hasattr(os, "mkfifo"):
                             try: os.mkfifo(pipe_path)
                             except: pass
                         
-                        # We replace the placeholder with the actual pipe path
+                        # 4. Prepare and start FFmpeg
                         final_cmd = stream.replace("pipe:1", f'"{pipe_path}"')
-                        
-                        # Start FFmpeg writing DIRECTLY to the pipe/file
                         proc = await asyncio.create_subprocess_shell(
                             final_cmd,
                             stdout=asyncio.subprocess.DEVNULL,
@@ -140,12 +146,20 @@ except ImportError:
                         )
                         if self._parent: self._parent._chat_procs[chat_id] = proc
                         
-                        # Wait a bit for the pipe to be initialized
-                        await asyncio.sleep(1.0)
+                        # 5. Wait for the pipe to be ready for reading
+                        await asyncio.sleep(2.0)
                         
-                        # We pass the FIFO path to the legacy voice engine
-                        return await self._call.start_audio(pipe_path)
+                        # 6. Start the new audio stream
+                        try:
+                            return await self._call.start_audio(pipe_path)
+                        except Exception as e:
+                            LOGGER.error(f"Legacy start_audio failed: {e}")
+                            return False
                     
+                    # No-effect path
+                    if hasattr(self._call, "stop_audio"):
+                        try: await self._call.stop_audio()
+                        except: pass
                     path = getattr(stream, 'path', stream)
                     return await self._call.start_audio(path)
                 self.change_stream = change_stream
