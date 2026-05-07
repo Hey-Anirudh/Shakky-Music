@@ -20,25 +20,22 @@ from config import BANNED_USERS, adminlist
 # Now synced with Nand._active_effects
 
 # ─── FFmpeg Filter Definitions ──────────────────────────────
+# Labels and descriptions only; FFmpeg logic moved to VoiceFilter.PRESETS
 AUDIO_FILTERS = {
     "bass_boost": {
         "label": "🔊 Bass Boost",
-        "ffmpeg": "equalizer=f=60:width_type=h:width=50:g=12,equalizer=f=120:width_type=h:width=100:g=6",
         "description": "Deep bass enhancement",
     },
     "8d_audio": {
         "label": "🎧 8D Audio",
-        "ffmpeg": "apulsator=mode=sine:hz=0.09:amount=0.8,aecho=0.8:0.88:60:0.4",
         "description": "Circular spatial panning",
     },
     "nightcore": {
         "label": "🌙 Nightcore",
-        "ffmpeg": "asetrate=44100*1.25,aresample=44100",
         "description": "Fast tempo + high pitch (1.25x)",
     },
     "slowed_reverb": {
         "label": "🎻 Slowed+Reverb",
-        "ffmpeg": "asetrate=44100*0.8,aresample=44100,aecho=0.8:0.88:60:0.4",
         "description": "Lo-fi slowed with premium reverb",
     },
 }
@@ -46,10 +43,7 @@ AUDIO_FILTERS = {
 def get_active_filter(chat_id):
     """Helper to get the current filter key from Nand state."""
     if chat_id in Nand._active_effects:
-        current_af = Nand._active_effects[chat_id].get("af")
-        for k, v in AUDIO_FILTERS.items():
-            if v["ffmpeg"] == current_af:
-                return k
+        return Nand._active_effects[chat_id].get("af")
     return None
 
 def _filter_menu_buttons(chat_id):

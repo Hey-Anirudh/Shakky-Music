@@ -24,46 +24,57 @@ class VoiceFilter:
     
     # Static Filter Library
     PRESETS = {
-        "fade_in": "afade=t=in:ss=0:d=1.5",
-        "fade_out": "afade=t=out:st={dur_sec}-1.5:d=1.5",
-        "bass_boost": "bass=g=15,aecho=0.8:0.88:60:0.4",
-        "nightcore": "asetrate=48000*1.25,atempo=1.25",
-        "slowmo": "asetrate=48000*0.8,atempo=0.8",
+        "bass_boost": "equalizer=f=60:width_type=h:width=50:g=12,equalizer=f=120:width_type=h:width=100:g=6",
+        "8d_audio": "apulsator=mode=sine:hz=0.09:amount=0.8,aecho=0.8:0.88:60:0.4",
+        "nightcore": "asetrate=48000*1.25,aresample=48000",
+        "slowed_reverb": "asetrate=48000*0.8,aresample=48000,aecho=0.8:0.88:60:0.4",
         "echo": "aecho=0.8:0.88:60:0.4",
-        "reverb": "aecho=0.8:0.88:60:0.4", # Simple proxy
+        "reverb": "aecho=0.8:0.88:60:0.4",
+        "fade_in": "afade=t=in:ss=0:d=2",
+        "fade_out": "afade=t=out:st={dur_sec}-2:d=2",
     }
 
     @classmethod
     def build_ffmpeg_args(cls, payload: dict, duration_sec: int = 0) -> str:
         """
         Translates a logic payload into a raw FFmpeg filter string.
-        Payload keys: 'fade_in', 'fade_out', 'bass', 'nightcore', 'af' (raw)
+        Payload keys: 'af' (preset key or raw string), 'speed', 'fade_in', 'fade_out'
         """
         if not payload:
             return ""
             
         filters = []
+        
+        # 1. Base Effects / Presets
+        af = payload.get("af")
+        if af:
+            preset = cls.PRESETS.get(af)
+            if preset:
+                filters.append(preset)
+            else:
+                # Assume raw FFmpeg string
+                filters.append(af)
+        
+        # 2. Dynamic Transitions
         if payload.get("fade_in") or payload.get("is_prodj"):
             filters.append(cls.PRESETS["fade_in"])
         
-        if payload.get("fade_out") and duration_sec > 5:
+        if payload.get("fade_out") and duration_sec > 10:
             filters.append(cls.PRESETS["fade_out"].format(dur_sec=duration_sec))
             
-        if payload.get("bass"):
-            filters.append(cls.PRESETS["bass_boost"])
+        # 3. Playback Speed (Independent of pitch)
+        speed = payload.get("speed", 1.0)
+        if speed != 1.0:
+            # Handle speed outside 0.5-2.0 range by chaining atempo
+            s = float(speed)
+            while s > 2.0:
+                filters.append("atempo=2.0")
+                s /= 2.0
+            while s < 0.5:
+                filters.append("atempo=0.5")
+                s /= 0.5
+            filters.append(f"atempo={s}")
             
-        if payload.get("nightcore"):
-            filters.append(cls.PRESETS["nightcore"])
-            
-        # Raw pass-through for custom effects
-        if payload.get("af"):
-            filters.append(payload["af"])
-            
-        # Seek support integrated into effects string for legacy stability
-        ss = payload.get("ss", 0)
-        to = payload.get("to")
-        
-        # We return the filter chain
         return ",".join(filters)
 
 # 🤖 Universal Core Switch (ARM VPS Fix)
@@ -114,13 +125,14 @@ except ImportError:
                         ts = int(time.time())
                         pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.wav")
                         
-                        try: os.mkfifo(pipe_path)
-                        except: pass
+                        if hasattr(os, "mkfifo"):
+                            try: os.mkfifo(pipe_path)
+                            except: pass
                         
                         # We replace the placeholder with the actual pipe path
                         final_cmd = stream.replace("pipe:1", f'"{pipe_path}"')
                         
-                        # Start FFmpeg writing DIRECTLY to the pipe
+                        # Start FFmpeg writing DIRECTLY to the pipe/file
                         proc = await asyncio.create_subprocess_shell(
                             final_cmd,
                             stdout=asyncio.subprocess.DEVNULL,
@@ -146,7 +158,6 @@ except ImportError:
         def __init__(self, p, **kwargs): 
             self.path = p
             self.filters = kwargs.get("additional_ffmpeg_parameters", "")
-            self.ss = kwargs.get("additional_ffmpeg_parameters", "") # simplified
     class AudioVideoPiped(AudioPiped): pass
     class HighQualityAudio: pass
     class MediumQualityVideo: pass
@@ -184,7 +195,7 @@ from shakky.utils.database import (
     set_loop,
 )
 from shakky.utils.exceptions import AssistantErr
-from shakky.utils.formatters import check_duration, seconds_to_min, speed_converter
+from shakky.utils.formatters import check_duration, seconds_to_min, speed_converter, time_to_seconds
 from shakky.utils.inline.play import stream_markup
 from shakky.utils.stream.autoclear import auto_clean
 from shakky.utils.webapp import notify_webapp
@@ -251,12 +262,9 @@ class Call:
             if to: seek_arg += f" -to {to}"
             
             filter_arg = f"-af \"{filters}\"" if filters else ""
-            re_arg = "-re" if "http" in str(path) else ""
             
-            # We move seek_arg BEFORE -i for much faster seeking (Input Seeking)
-            # Added -vn to ensure no video stream is processed for audio pipes
-            # Switched to WAV format to ensure the legacy engine recognizes the stream header
-            # Removed -re to fill the pipe as fast as possible (prevents underflow)
+            # Use WAV format for legacy compatibility, -vn for audio only
+            # No -re to prevent pipe underflow during heavy filtering
             return f'ffmpeg -y -loglevel panic {seek_arg} -i "{path}" {filter_arg} -vn -f wav pipe:1'
 
         # Modern or No-Effect Legacy
@@ -275,10 +283,9 @@ class Call:
         # Build stream
         stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0, chat_id=chat_id)
 
-        # Step 1: Membership Check (Passive - No more false KICKED errors)
+        # Step 1: Membership Check
         try:
             if not userbot.me: await userbot.get_me()
-            # We just try to add, if it fails, we assume they are already in or we lack perms
             try: await app.add_chat_members(chat_id, userbot.me.id)
             except: pass
         except: pass
@@ -290,7 +297,6 @@ class Call:
                 if IS_LEGACY:
                     try: await assistant.join(chat_id)
                     except: pass
-                    # If stream is a string (FFmpeg pipe command), use it
                     await asyncio.wait_for(assistant.start_audio(stream), timeout=20)
                 else:
                     await asyncio.wait_for(assistant.join_group_call(chat_id, stream), timeout=30)
@@ -309,48 +315,76 @@ class Call:
              try: await app.send_message(original_chat_id, text="⚠️ **Failed to join Voice Chat. Please ensure Assistant is in group.**")
              except: pass
 
-        await add_active_chat(chat_id)
-        await music_on(chat_id)
-        if video: await add_active_video_chat(chat_id)
-
     async def apply_audio_filter(self, chat_id: int, filter_key: str, playing: list):
         """Applies a specific audio filter in real-time by re-syncing the stream."""
         if not playing: return
         
-        # Mark as switching to prevent on_stream_end from skipping the song
         self._switching.add(chat_id)
-        
         try:
-            # 1. Update active effect state
+            # Update active effect state
+            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
+            
             if filter_key:
-                from shakky.plugins.admins.filters import AUDIO_FILTERS
-                self._active_effects[chat_id] = {"af": AUDIO_FILTERS[filter_key]["ffmpeg"]}
+                # Store the filter key or raw ffmpeg string
+                self._active_effects[chat_id]["af"] = filter_key 
             else:
-                self._active_effects.pop(chat_id, None)
+                self._active_effects[chat_id].pop("af", None)
 
-            # 2. Calculate current seek position
-            track = playing[0]
-            start_time = track.get("start_time", time.time())
-            current_pos = int(time.time() - start_time)
-            if current_pos < 0: current_pos = 0
-            
-            # 3. Build new stream with seek and filter
-            payload = {"ss": current_pos}
-            stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0), chat_id=chat_id)
-            
-            # 4. Apply to assistant
-            ass = await group_assistant(self, chat_id)
-            if IS_LEGACY:
-                 # FIFO will handle the new command string
-                 await ass.change_stream(chat_id, stream)
-            else:
-                 await ass.change_stream(chat_id, stream)
-                 await asyncio.sleep(0.5)
-                 await ass.resume_stream(chat_id)
+            # Sync stream
+            await self._sync_stream(chat_id, playing)
         finally:
-            # Wait a bit for any transient events to fire and be ignored
             await asyncio.sleep(2)
             self._switching.discard(chat_id)
+
+    async def seek_stream(self, chat_id, to_seek, *args, **kwargs):
+        """Seeks to a specific position in the current track."""
+        playing = db.get(chat_id)
+        if not playing: return
+        
+        # Handle both integer seconds and "MM:SS" strings
+        if isinstance(to_seek, str):
+            to_seek = time_to_seconds(to_seek)
+        
+        self._switching.add(chat_id)
+        try:
+            playing[0]["start_time"] = time.time() - to_seek
+            await self._sync_stream(chat_id, playing)
+        finally:
+            await asyncio.sleep(2)
+            self._switching.discard(chat_id)
+
+    async def speedup_stream(self, chat_id, file_path, speed, playing):
+        """Changes the playback speed of the current stream."""
+        if not playing: return
+        
+        self._switching.add(chat_id)
+        try:
+            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
+            self._active_effects[chat_id]["speed"] = float(speed)
+            
+            await self._sync_stream(chat_id, playing)
+        finally:
+            await asyncio.sleep(2)
+            self._switching.discard(chat_id)
+
+    async def _sync_stream(self, chat_id, playing):
+        """Core internal method to re-initialize the stream with current state (seek/filters/speed)."""
+        track = playing[0]
+        start_time = track.get("start_time", time.time())
+        current_pos = int(time.time() - start_time)
+        if current_pos < 0: current_pos = 0
+        
+        payload = {"ss": current_pos}
+        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), payload, track.get("seconds", 0), chat_id=chat_id)
+        
+        ass = await group_assistant(self, chat_id)
+        try:
+            await ass.change_stream(chat_id, stream)
+            if not IS_LEGACY:
+                await asyncio.sleep(0.5)
+                await ass.resume_stream(chat_id)
+        except Exception as e:
+            LOGGER.error(f"Sync stream failed for {chat_id}: {e}")
 
     async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
         lock = self.get_lock(chat_id)
@@ -389,7 +423,6 @@ class Call:
             videoid = track["vidid"]
             video = (track["streamtype"] == "video")
             
-            # JIT Download
             if "vid_" in queued and not os.path.exists(queued) and videoid:
                 try:
                     from shakky.platforms import YouTube as YT
@@ -403,8 +436,6 @@ class Call:
                     if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
                 await _clear_(chat_id); return
 
-            # Build stream with effects
-            # We assume current song might need fade-in if it's the start of a session or Pro-DJ
             payload = {"is_prodj": True} if chat_id in self._active_effects else {}
             stream = self.build_stream(queued, video, payload, track.get("seconds", 0), chat_id=chat_id)
             

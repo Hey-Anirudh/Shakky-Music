@@ -54,10 +54,7 @@ async def seek_comm(client, message: Message, _, chat_id):
     try:
         await Nand.seek_stream(
             chat_id,
-            file_path,
-            to_seek_str,
-            duration_seconds,
-            playing[0].get("streamtype", "audio")
+            to_seek
         )
     except Exception as e:
         return await mystic.edit_text(f"Seek Failed: {e}")
