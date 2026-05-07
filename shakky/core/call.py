@@ -314,7 +314,12 @@ class Call:
                                 check = db.get(chat_id)
                                 if check: return await self.change_stream(client, chat_id, skip_pop=True)
                     except: pass
-                    await _clear_(chat_id); return
+                    await _clear_(chat_id)
+                    try:
+                        if IS_LEGACY: await client.leave(chat_id)
+                        else: await client.leave_group_call(chat_id)
+                    except: pass
+                    return
 
             track = check[0]
             queued = track["file"]
@@ -333,7 +338,12 @@ class Call:
                 if len(check) > 0:
                     check.pop(0)
                     if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
-                await _clear_(chat_id); return
+                await _clear_(chat_id)
+                try:
+                    if IS_LEGACY: await client.leave(chat_id)
+                    else: await client.leave_group_call(chat_id)
+                except: pass
+                return
 
             stream = self.build_stream(queued, video, {}, track.get("seconds", 0), chat_id=chat_id)
             try:
@@ -345,7 +355,12 @@ class Call:
                 if len(check) > 0:
                     check.pop(0)
                     if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
-                await _clear_(chat_id); return
+                await _clear_(chat_id)
+                try:
+                    if IS_LEGACY: await client.leave(chat_id)
+                    else: await client.leave_group_call(chat_id)
+                except: pass
+                return
 
             asyncio.create_task(self._send_now_playing(chat_id, videoid, title, track["by"], track["chat_id"], mention))
 
