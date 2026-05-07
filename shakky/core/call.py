@@ -194,7 +194,7 @@ class Call:
         self._chat_procs = {} # chat_id -> FFmpeg subprocess
 
     def get_lock(self, chat_id: int):
-        if chat_id not in self._locks: self._locks[chat_id] = asyncio.lock()
+        if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
         return self._locks[chat_id]
 
     def build_stream(self, path, video, payload=None, duration=0, chat_id=None):
