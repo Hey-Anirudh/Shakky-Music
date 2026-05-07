@@ -201,3 +201,43 @@ async def get_artist_spotlight(title: str):
         except Exception as e:
             print(f"Groq Spotlight API Error: {e}")
             return None
+
+async def get_podcast_script(next_song: str, last_song: str = None, user_name: str = "Someone"):
+    """
+    Generates a charisma-heavy radio host script for the next song.
+    """
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    context = f"That was '{last_song}'. " if last_song else ""
+    prompt = f"""
+    Act as a high-energy, charismatic professional Radio DJ for 'Shakky FM'. 
+    Announce the next track: '{next_song}' which was requested by {user_name}.
+    {context}
+    Keep it under 25 words. Be witty and premium. 
+    Respond ONLY with the DJ script. No stage directions or extra text.
+    """
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a professional radio host."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.8,
+        "max_tokens": 100
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(GROQ_URL, headers=headers, data=json.dumps(payload)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    script = data["choices"][0]["message"]["content"].strip().replace('"', '')
+                    return script
+                else:
+                    return f"Up next, {next_song} requested by {user_name} on Shakky FM!"
+        except:
+            return f"Up next, {next_song} requested by {user_name} on Shakky FM!"

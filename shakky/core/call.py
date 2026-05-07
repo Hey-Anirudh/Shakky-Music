@@ -338,6 +338,8 @@ class Call:
             stream = self.build_stream(queued, video, {}, track.get("seconds", 0), chat_id=chat_id)
             try:
                 track["start_time"] = time.time()
+                # 🎙️ Podcast Intro (Blocking)
+                await self._play_podcast_intro(chat_id, track)
                 await client.change_stream(chat_id, stream)
             except:
                 if len(check) > 0:
@@ -409,6 +411,39 @@ class Call:
             if ass:
                 try: await ass.stop()
                 except: pass
+
+    async def _play_podcast_intro(self, chat_id, next_track):
+        """Generates and plays a charismatic radio intro before the track starts."""
+        try:
+            from shakky.utils.database import is_podcast, group_assistant
+            if not await is_podcast(chat_id): return
+            
+            # 1. Get script
+            from shakky.utils.groq import get_podcast_script
+            from shakky.misc import last_played
+            
+            last_song = last_played.get(chat_id, "")
+            next_song = next_track.get("title", "this masterpiece")
+            user_name = next_track.get("by", "one of you")
+            
+            script = await get_podcast_script(next_song, last_song, user_name)
+            
+            # 2. Generate TTS
+            from shakky.plugins.tools.shoutout import generate_shoutout
+            file_name = f"podcast_{chat_id}.mp3"
+            file_path = os.path.join("downloads", file_name)
+            await generate_shoutout(script, file_path)
+            
+            # 3. Play via Secondary Assistant (to avoid blocking main assistant if possible)
+            # For simplicity and sync, we'll use the main assistant but pause music briefly
+            ass = await group_assistant(self, chat_id)
+            if os.path.exists(file_path):
+                # Start the intro
+                await ass.change_stream(chat_id, file_path)
+                await asyncio.sleep(8) # Wait for intro to finish
+                os.remove(file_path)
+        except Exception as e:
+            LOGGER.error(f"Podcast Intro failed: {e}")
 
     async def decorators(self):
         def reg(client, ev, h):
