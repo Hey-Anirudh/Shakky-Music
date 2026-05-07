@@ -1,55 +1,50 @@
 import asyncio
-import logging
 import os
 import time
+import re
+import logging
+from datetime import datetime, timedelta
+from typing import Union
+
 from pyrogram import Client
-from pyrogram.types import InlineKeyboardMarkup
+from pyrogram.enums import ChatType, ChatMemberStatus
+from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# ─── PyTgCalls Version Compatibility Layer ──────────────────
+import pytgcalls
+from pytgcalls.exceptions import (
+    AlreadyJoinedError,
+    NoActiveGroupCall,
+    TelegramServerError,
+)
+
+# 🤖 Universal Core Switch (ARM VPS Fix)
+IS_V3 = False
+IS_LEGACY = False
+
 try:
-    # --- Modern Era (v1.0 - v3.0+) ---
+    # --- Modern Era (v1, v2, v3) ---
     from pytgcalls import PyTgCalls, StreamType
-    from pytgcalls.types import AudioPiped, AudioVideoPiped, Update
-    from pytgcalls.types.stream import HighQualityAudio, MediumQualityVideo
-    
-    # Check if it's v3 (has join_group_call and change_stream on the main class)
+    from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
+    from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
+    from pytgcalls.types import Update
+    if not hasattr(PyTgCalls, "join_group_call"): raise ImportError("Legacy")
+    try:
+        from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
+        IS_V3 = True
+    except ImportError:
+        IS_V3 = False
     IS_LEGACY = False
-    
-    # We create a simple wrapper to ensure consistent method names if needed,
-    # but v3's native change_stream and join_group_call are exactly what we want.
-    class PyTgCallsWrapper(PyTgCalls):
-        def __init__(self, client, **kwargs):
-            self._parent = kwargs.pop("parent", None)
-            super().__init__(client, **kwargs)
-        
-        async def change_stream(self, chat_id, stream):
-            """Robust stream switcher for v3."""
-            try:
-                # v3 native change_stream is very reliable
-                return await super().change_stream(chat_id, stream)
-            except Exception as e:
-                logging.getLogger(__name__).error(f"v3 change_stream failed: {e}")
-                # Fallback: Stop and Re-join (Heavy but works)
-                try: await self.leave_group_call(chat_id)
-                except: pass
-                return await self.join_group_call(chat_id, stream)
-
-    # Use the wrapper as our PyTgCalls class
-    PyTgCalls = PyTgCallsWrapper
-
 except ImportError:
     # --- Legacy Era (v0.9.x) ---
     IS_LEGACY = True
     try:
         from pytgcalls import GroupCallFactory
-        
         class PyTgCalls:
-            """Shim to make v0.9.x look like v3.x for the rest of the code."""
             def __init__(self, client, **kwargs):
                 self._factory = GroupCallFactory(client)
                 self._call = self._factory.get_group_call()
                 self._parent = kwargs.get("parent")
-                # Direct mappings
                 self.start = self._call.start
                 self.stop = self._call.stop
                 self.join = self._call.join
@@ -57,61 +52,65 @@ except ImportError:
                 self.start_audio = self._call.start_audio
                 self.pause_stream = self._call.pause_stream
                 self.resume_stream = self._call.resume_stream
-                self.join_group_call = self._call.join # In v0.9 join is basically join_group_call
-                self.leave_group_call = self._call.leave
-            
-            async def change_stream(self, chat_id, stream):
-                """Legacy Pipe Engine: Re-spawns FFmpeg for each sync."""
-                if isinstance(stream, str) and stream.startswith("ffmpeg"):
-                    # 1. Stop current
+                
+                async def change_stream(chat_id, stream):
+                    if isinstance(stream, str) and stream.startswith("ffmpeg"):
+                        # 🌪️ DIRECT OUTPUT UPDATE: Robust Legacy Engine
+                        
+                        # 1. Stop current audio if possible
+                        if hasattr(self._call, "stop_audio"):
+                            try: await self._call.stop_audio()
+                            except: pass
+                        
+                        # 2. Cleanup old process
+                        if self._parent and chat_id in self._parent._chat_procs:
+                            try: 
+                                proc = self._parent._chat_procs[chat_id]
+                                proc.kill()
+                                await proc.wait()
+                            except: pass
+                        
+                        # 3. Create a unique pipe path
+                        ts = int(time.time() * 1000)
+                        pipe_path = os.path.abspath(f"downloads/pipe_{abs(chat_id)}_{ts}.pcm")
+                        
+                        if hasattr(os, "mkfifo"):
+                            try: os.mkfifo(pipe_path)
+                            except: pass
+                        
+                        # 4. Prepare and start FFmpeg
+                        import shlex
+                        final_cmd = stream.replace("pipe:1", f'"{pipe_path}"')
+                        args = shlex.split(final_cmd)
+                        
+                        proc = await asyncio.create_subprocess_exec(
+                            *args,
+                            stdout=asyncio.subprocess.DEVNULL,
+                            stderr=asyncio.subprocess.DEVNULL
+                        )
+                        if self._parent: self._parent._chat_procs[chat_id] = proc
+                        
+                        # 5. Wait for the pipe to be ready
+                        await asyncio.sleep(1.5)
+                        
+                        # 6. Start the new audio stream
+                        try:
+                            return await self._call.start_audio(pipe_path)
+                        except Exception as e:
+                            LOGGER.error(f"Legacy start_audio failed: {e}")
+                            return False
+                    
                     if hasattr(self._call, "stop_audio"):
                         try: await self._call.stop_audio()
                         except: pass
-                    
-                    # 2. Cleanup old FFmpeg
-                    if self._parent and chat_id in self._parent._chat_procs:
-                        try:
-                            p = self._parent._chat_procs[chat_id]
-                            p.kill()
-                            await p.wait()
-                        except: pass
-                    
-                    # 3. Setup new pipe
-                    pipe_path = os.path.abspath(f"downloads/p_{abs(chat_id)}_{int(time.time()*1000)}.pcm")
-                    if hasattr(os, "mkfifo"):
-                        try: os.mkfifo(pipe_path)
-                        except: pass
-                    
-                    # 4. Start FFmpeg
-                    import shlex
-                    cmd = stream.replace("pipe:1", pipe_path)
-                    args = shlex.split(cmd)
-                    proc = await asyncio.create_subprocess_exec(
-                        *args,
-                        stdout=asyncio.subprocess.DEVNULL,
-                        stderr=asyncio.subprocess.DEVNULL
-                    )
-                    if self._parent: self._parent._chat_procs[chat_id] = proc
-                    
-                    # 5. Buffer and Play
-                    await asyncio.sleep(2.0)
-                    try:
-                        return await self._call.start_audio(pipe_path)
-                    except Exception as e:
-                        logging.getLogger(__name__).error(f"Legacy Sync Failed: {e}")
-                        return False
-                
-                # Standard file path
-                if hasattr(self._call, "stop_audio"):
-                    try: await self._call.stop_audio()
-                    except: pass
-                path = getattr(stream, 'path', stream)
-                return await self._call.start_audio(path)
-
+                    path = getattr(stream, 'path', stream)
+                    return await self._call.start_audio(path)
+                self.change_stream = change_stream
     except ImportError:
-        raise ImportError("Critical: No compatible PyTgCalls version found.")
+        try: from pytgcalls import PyTgCalls
+        except ImportError: raise ImportError("Critical: No PyTgCalls found.")
 
-    # Legacy Dummies for Type Safety
+    # Legacy dummies/shims
     class AudioPiped: 
         def __init__(self, p, **kwargs): 
             self.path = p
@@ -120,47 +119,22 @@ except ImportError:
     class HighQualityAudio: pass
     class MediumQualityVideo: pass
     class Update: pass
-    class StreamType: pulse = "pulse"
+    class StreamAudioEnded: pass
+    class StreamVideoEnded: pass
+    class StreamDeleted: pass
+    class StreamType:
+        pulse_stream = "pulse"
+        pulse = "pulse"
 
-# --- 🎭 Premium Spatial Audio Engine (v2.0) ---
-class VoiceFilter:
-    """Refined registry for professional audio/video effects."""
-    
-    PRESETS = {
-        "bass_boost": "equalizer=f=60:width_type=h:width=50:g=15,equalizer=f=120:width_type=h:width=100:g=8",
-        "8d_audio": "apulsator=mode=sine:hz=0.1:amount=0.9,aecho=0.8:0.88:60:0.4",
-        "nightcore": "asetrate=48000*1.25,aresample=48000,atempo=1.0",
-        "slowed_reverb": "asetrate=48000*0.8,aresample=48000,aecho=0.8:0.9:1000:0.3",
-        "reverb": "aecho=0.8:0.88:60:0.4",
-        "fade_in": "afade=t=in:ss=0:d=2",
-    }
-
-    @classmethod
-    def build_ffmpeg_args(cls, payload: dict) -> str:
-        """Translates payload to FFmpeg filter string."""
-        if not payload: return ""
-        filters = []
-        
-        # 1. Base Effects
-        af = payload.get("af")
-        if af and af in cls.PRESETS:
-            filters.append(cls.PRESETS[af])
-        elif af:
-            filters.append(af) # Raw string
-
-        # 2. Variable Speed (TEMPO)
-        speed = payload.get("speed", 1.0)
-        try:
-            speed = float(speed)
-            if speed != 1.0:
-                filters.append(f"atempo={speed}")
-        except: pass
-        
-        return ",".join(filters)
-
-# Types that might be missing in some environments
+# Ensure types
 if "StreamAudioEnded" not in globals():
     class StreamAudioEnded: pass
+if "Update" not in globals():
+    class Update: pass
+if "StreamType" not in globals():
+    class StreamType:
+        pulse = "pulse"
+        pulse_stream = "pulse"
 
 import config
 from shakky import YouTube, app
@@ -188,6 +162,7 @@ from strings import get_string
 autoend = {}
 counter = {}
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 LOGGER = logging.getLogger(__name__)
 
 async def _clear_(chat_id):
@@ -200,7 +175,8 @@ class Call:
         os.makedirs("downloads", exist_ok=True)
         def _init_ass(userbot):
             if not userbot: return None
-            return PyTgCalls(userbot, parent=self, cache_duration=100)
+            if IS_LEGACY: return PyTgCalls(userbot, parent=self, cache_duration=100)
+            return PyTgCalls(userbot, cache_duration=100)
 
         self.userbot1 = Client(name="Ass1", api_id=config.API_ID, api_hash=config.API_HASH, session_string=str(config.STRING1), no_updates=True)
         self.one = _init_ass(self.userbot1)
@@ -214,43 +190,77 @@ class Call:
         self.five = _init_ass(self.userbot5)
         self._locks = {}
         self._last_skip = {}
-        self._active_effects = {} # chat_id -> payload
-        self._switching = set() # Tracks chats currently re-syncing
-        self._chat_procs = {} # chat_id -> FFmpeg subprocess (Legacy only)
+        self._switching = set() 
+        self._chat_procs = {} # chat_id -> FFmpeg subprocess
 
     def get_lock(self, chat_id: int):
-        if chat_id not in self._locks: self._locks[chat_id] = asyncio.Lock()
+        if chat_id not in self._locks: self._locks[chat_id] = asyncio.lock()
         return self._locks[chat_id]
 
     def build_stream(self, path, video, payload=None, duration=0, chat_id=None):
-        """Constructs the stream path or object with premium filters."""
-        if not payload: payload = {}
-        # Merge with global chat effects
-        merged = {**(self._active_effects.get(chat_id, {})), **payload}
-        filters = VoiceFilter.build_ffmpeg_args(merged)
+        """Constructs the stream path or object."""
+        payload = payload or {}
+        ss = payload.get("ss", 0)
         
-        ss = merged.get("ss", 0)
-        to = merged.get("to", "")
-        
-        if IS_LEGACY and (filters or ss != 0):
-            # 🚀 Legacy Pipe Engine (Refined for Windows/Stability)
-            seek_arg = f"-ss {ss}"
-            if to: seek_arg += f" -to {to}"
-            filter_arg = f"-af {filters}" if filters else ""
-            return f'ffmpeg -y -loglevel panic -re {seek_arg} -i "{path}" {filter_arg} -vn -f s16le -ac 2 -ar 48000 pipe:1'
+        if IS_LEGACY and ss != 0:
+            re_arg = "-re" if str(path).startswith("http") else ""
+            return f'ffmpeg -y -loglevel panic {re_arg} -ss {ss} -i "{path}" -vn -f s16le -ac 2 -ar 48000 pipe:1'
 
-        # Modern Pytgcalls (v1.0+)
-        # IMPORTANT: No manual quotes for additional_ffmpeg_parameters! 
         ffmpeg_args = f"-ss {ss}"
-        if to: ffmpeg_args += f" -to {to}"
-        if filters: ffmpeg_args += f" -af {filters}"
-
         if video:
             return AudioVideoPiped(path, HighQualityAudio(), MediumQualityVideo(), additional_ffmpeg_parameters=ffmpeg_args)
         return AudioPiped(path, HighQualityAudio(), additional_ffmpeg_parameters=ffmpeg_args)
 
+    async def join_call(self, chat_id, original_chat_id, link, video=None, image=None, payload=None):
+        assistant = await group_assistant(self, chat_id)
+        userbot = self.userbot1 if assistant == self.one else (self.userbot2 if assistant == self.two else (self.userbot3 if assistant == self.three else (self.userbot4 if assistant == self.four else self.userbot5)))
+        
+        stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0, chat_id=chat_id)
+
+        try:
+            if not userbot.me: await userbot.get_me()
+            try: await app.add_chat_members(chat_id, userbot.me.id)
+            except: pass
+        except: pass
+
+        joined = False
+        for attempt in range(2):
+            try:
+                if IS_LEGACY:
+                    try: await assistant.join(chat_id)
+                    except: pass
+                    await asyncio.wait_for(assistant.start_audio(stream), timeout=20)
+                else:
+                    await asyncio.wait_for(assistant.join_group_call(chat_id, stream), timeout=30)
+                joined = True; break
+            except AlreadyJoinedError: joined = True; break
+            except Exception as e:
+                if "ALREADY_JOINED" in str(e).upper(): joined = True; break
+                LOGGER.error(f"[join] Attempt {attempt} failed: {e}")
+                await asyncio.sleep(1)
+
+        if joined:
+            await add_active_chat(chat_id)
+            await music_on(chat_id)
+            if video: await add_active_video_chat(chat_id)
+        else:
+             try: await app.send_message(original_chat_id, text="⚠️ **Failed to join Voice Chat.**")
+             except: pass
+
+    async def seek_stream(self, chat_id, to_seek, *args, **kwargs):
+        playing = db.get(chat_id)
+        if not playing: return
+        if isinstance(to_seek, str): to_seek = time_to_seconds(to_seek)
+        
+        self._switching.add(chat_id)
+        try:
+            playing[0]["start_time"] = time.time() - to_seek
+            await self._sync_stream(chat_id, playing)
+        finally:
+            await asyncio.sleep(2)
+            self._switching.discard(chat_id)
+
     async def _sync_stream(self, chat_id, playing):
-        """Core internal method to re-initialize the stream with current state."""
         track = playing[0]
         start_time = track.get("start_time", time.time())
         current_pos = int(time.time() - start_time)
@@ -262,128 +272,166 @@ class Call:
         ass = await group_assistant(self, chat_id)
         try:
             await ass.change_stream(chat_id, stream)
+            if not IS_LEGACY:
+                await asyncio.sleep(0.5)
+                await ass.resume_stream(chat_id)
         except Exception as e:
             LOGGER.error(f"Sync stream failed: {e}")
 
-    async def apply_audio_filter(self, chat_id: int, filter_key: str, playing: list):
-        """Applies a premium audio filter in real-time."""
-        if not playing: return
-        self._switching.add(chat_id)
-        try:
-            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
-            if filter_key: self._active_effects[chat_id]["af"] = filter_key
-            else: self._active_effects[chat_id].pop("af", None)
-            await self._sync_stream(chat_id, playing)
-        finally:
-            await asyncio.sleep(1) # Reduced cooldown
-            self._switching.discard(chat_id)
+    async def change_stream(self, client, chat_id, mention=None, skip_pop: bool = False):
+        lock = self.get_lock(chat_id)
+        async with lock:
+            if not skip_pop:
+                if time.time() - self._last_skip.get(chat_id, 0) < 1.5: return
+                self._last_skip[chat_id] = time.time()
 
-    async def speedup_stream(self, chat_id: int, speed: float, playing: list):
-        """Modifies playback speed in real-time."""
-        if not playing: return
-        self._switching.add(chat_id)
+            check = db.get(chat_id)
+            if not check:
+                await _clear_(chat_id)
+                try: 
+                    if IS_LEGACY: await client.leave(chat_id)
+                    else: await client.leave_group_call(chat_id)
+                except: pass
+                return
+
+            if not skip_pop:
+                loop = await get_loop(chat_id)
+                if loop == 0:
+                    popped = check.pop(0)
+                    await auto_clean(popped)
+                else: await set_loop(chat_id, loop - 1)
+                
+                if not check:
+                    try:
+                        from shakky.platforms import youtube
+                        last_track = popped if 'popped' in locals() else None
+                        if last_track and last_track.get("vidid"):
+                            related = await youtube.get_related(last_track["vidid"], last_track["title"])
+                            if related:
+                                await app.send_message(chat_id, text=f"✨ **Auto-DJ: Playing {related['title']}**")
+                                from shakky.utils.stream.stream import put_queue
+                                await put_queue(chat_id, last_track["chat_id"], f"vid_{related['vidid']}", related['title'], related['duration'], "Auto-DJ", related['vidid'], 0, "audio")
+                                check = db.get(chat_id)
+                                if check: return await self.change_stream(client, chat_id, skip_pop=True)
+                    except: pass
+                    await _clear_(chat_id); return
+
+            track = check[0]
+            queued = track["file"]
+            title = track["title"].title()
+            videoid = track["vidid"]
+            video = (track["streamtype"] == "video")
+            
+            if "vid_" in queued and not os.path.exists(queued) and videoid:
+                try:
+                    from shakky.platforms import YouTube as YT
+                    file_path, _ = await asyncio.wait_for(YT.download(videoid, video=video, raw_query=title), timeout=60)
+                    if file_path: queued = file_path; track["file"] = file_path
+                except: queued = None
+            
+            if not queued or not os.path.exists(queued):
+                if len(check) > 0:
+                    check.pop(0)
+                    if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
+                await _clear_(chat_id); return
+
+            stream = self.build_stream(queued, video, {}, track.get("seconds", 0), chat_id=chat_id)
+            try:
+                track["start_time"] = time.time()
+                await client.change_stream(chat_id, stream)
+            except:
+                if len(check) > 0:
+                    check.pop(0)
+                    if len(check) > 0: return await self.change_stream(client, chat_id, skip_pop=True)
+                await _clear_(chat_id); return
+
+            asyncio.create_task(self._send_now_playing(chat_id, videoid, title, track["by"], track["chat_id"], mention))
+
+    async def pause_stream(self, chat_id):
+        ass = await group_assistant(self, chat_id)
         try:
-            if chat_id not in self._active_effects: self._active_effects[chat_id] = {}
-            self._active_effects[chat_id]["speed"] = speed
-            await self._sync_stream(chat_id, playing)
-        finally:
-            await asyncio.sleep(1)
-            self._switching.discard(chat_id)
+             if not IS_LEGACY: await ass.pause_stream(chat_id)
+        except: pass
+
+    async def resume_stream(self, chat_id):
+        ass = await group_assistant(self, chat_id)
+        try:
+             if not IS_LEGACY: await ass.resume_stream(chat_id)
+        except: pass
 
     async def stop_stream(self, chat_id):
         ass = await group_assistant(self, chat_id)
         try:
-            if IS_LEGACY: await ass.leave_group_call(chat_id)
+            await _clear_(chat_id)
+            if chat_id in self._chat_procs:
+                try: self._chat_procs[chat_id].terminate()
+                except: pass
+                del self._chat_procs[chat_id]
+            if IS_LEGACY: await ass.leave(chat_id)
             else: await ass.leave_group_call(chat_id)
         except: pass
-        await _clear_(chat_id)
-        await notify_webapp(chat_id, action="stop")
 
     async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, mention):
-        """Dynamic Aura Card: Premium Now Playing UI."""
         try:
             track = db[chat_id][0]
             dur = track.get("dur", "0:00")
             thumb = await get_thumb(videoid, title, dur, user, chat_id)
             markup = stream_markup(None, chat_id)
             
-            current_effect = self._active_effects.get(chat_id, {}).get("af")
-            effect_text = f"\n✧ **Effect:** `{' '.join(current_effect.split('_')).title()}`" if current_effect else ""
-            
+            # 📰 Artist Spotlight
+            spotlight_text = ""
+            try:
+                from shakky.utils.groq import get_artist_spotlight
+                fact = await get_artist_spotlight(title)
+                if fact:
+                    spotlight_text = f"\n\n<blockquote><b>Did you know?</b> {fact}</blockquote>"
+            except: pass
+
             caption = (
                 f"<blockquote><b>▷ Now Playing</b></blockquote>\n"
                 f"━━━━━━━━━━━━━━━━━━\n"
                 f"✧ **Track:** <code>{title[:30]}</code>\n"
                 f"✧ **Duration:** <code>{dur}</code>\n"
                 f"✧ **By:** {user}"
-                f"{effect_text}"
+                f"{spotlight_text}"
             )
             if mention: caption += f"\n✧ **Skipped By:** {mention}"
-                
             msg = await app.send_photo(original_chat_id, photo=thumb, caption=caption, reply_markup=InlineKeyboardMarkup(markup))
             track["mystic"] = msg
-        except Exception as e:
-            LOGGER.error(f"Aura Card send failed: {e}")
-
-    async def change_stream(self, client, chat_id, skip_pop=False):
-        """Main queue transition logic with Auto-DJ."""
-        check = db.get(chat_id)
-        if not check: return
-        
-        popped = None
-        if not skip_pop:
-            popped = check.pop(0)
-            
-        if not check:
-            # --- Smart Auto-DJ Logic ---
-            try:
-                from shakky.platforms import youtube
-                last_track = popped
-                if last_track and last_track.get("vidid"):
-                    related = await youtube.get_related(last_track["vidid"], last_track["title"])
-                    if related:
-                        await app.send_message(chat_id, text=f"✨ **Auto-DJ: Keeping the vibe alive with {related['title']}**")
-                        from shakky.utils.stream.stream import put_queue
-                        await put_queue(
-                            chat_id, last_track["chat_id"], f"vid_{related['vidid']}",
-                            related['title'], related['duration'], "Auto-DJ",
-                            related['vidid'], 0, "audio"
-                        )
-                        check = db.get(chat_id)
-                        if check: return await self.change_stream(client, chat_id, skip_pop=True)
-            except Exception as e:
-                LOGGER.error(f"Auto-DJ failed: {e}")
-
-            await _clear_(chat_id)
-            try: await client.leave_group_call(chat_id)
-            except: pass
-            return
-
-        track = check[0]
-        videoid = track["vidid"]
-        title = track["title"]
-        user = track["by"]
-        original_chat_id = track["chat_id"]
-        
-        # Reset effects for new song? (Usually better for UX)
-        self._active_effects.pop(chat_id, None)
-        
-        stream = self.build_stream(track["file"], (track["streamtype"] == "video"), chat_id=chat_id)
-        ass = await group_assistant(self, chat_id)
-        
-        try:
-            await ass.change_stream(chat_id, stream)
-        except Exception as e:
-            return await client.send_message(original_chat_id, text=f"❌ Error switching stream: {e}")
-            
-        await self._send_now_playing(chat_id, videoid, title, user, original_chat_id, None)
+        except: pass
 
     async def start(self):
         for ass in [self.one, self.two, self.three, self.four, self.five]:
             if ass: await ass.start()
 
-    async def stop_all(self):
+    async def stop(self):
         for ass in [self.one, self.two, self.three, self.four, self.five]:
-            if ass: await ass.stop()
+            if ass:
+                try: await ass.stop()
+                except: pass
+
+    async def decorators(self):
+        def reg(client, ev, h):
+            if not client: return
+            try:
+                m = getattr(client, ev, None)
+                if m: m()(h)
+            except: pass
+        async def sh(_, chat_id: int): await self.stop_stream(chat_id)
+        async def eh(client, update: Update):
+            cid = getattr(update, 'chat_id', None)
+            if cid:
+                if cid in self._switching: return
+                is_end = False
+                if IS_V3:
+                    from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded, StreamDeleted
+                    if isinstance(update, (StreamAudioEnded, StreamVideoEnded, StreamDeleted)): is_end = True
+                elif type(update).__name__ in ["StreamAudioEnded", "StreamVideoEnded", "StreamDeleted"]: is_end = True
+                if is_end: asyncio.create_task(self.change_stream(client, cid))
+
+        for ass in [self.one, self.two, self.three, self.four, self.five]:
+            if not ass: continue
+            reg(ass, "on_kicked", sh); reg(ass, "on_closed_voice_chat", sh); reg(ass, "on_left", sh); reg(ass, "on_stream_end", eh)
 
 Nand = Call()
+ani = Nand

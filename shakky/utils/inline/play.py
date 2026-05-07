@@ -75,7 +75,6 @@ def stream_markup_timer(_, chat_id, played, dur):
             InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
@@ -101,7 +100,6 @@ def telegram_markup_timer(_, chat_id, played, dur):
             InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
@@ -113,7 +111,6 @@ def stream_markup(_, chat_id):
             InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
         ],
         [
-            InlineKeyboardButton(text="🎚️ Filters", callback_data=f"af_menu|{chat_id}"),
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
     ]
@@ -240,10 +237,6 @@ def panel_markup_1(_, videoid, chat_id):
             ),
         ],
         [
-            InlineKeyboardButton(
-                text="🎚️ ғɪʟᴛᴇʀs",
-                callback_data=f"af_menu|{chat_id}",
-            ),
             InlineKeyboardButton(
                 text="• ʜᴏᴍᴇ •",
                 callback_data=f"MainMarkup {videoid}|{chat_id}",

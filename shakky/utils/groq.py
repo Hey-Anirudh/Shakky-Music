@@ -162,3 +162,42 @@ async def get_synced_lyrics_from_groq(title: str):
         except Exception as e:
             print(f"Groq Lyrics API Error: {e}")
             return None
+
+async def get_artist_spotlight(title: str):
+    """
+    Get a single interesting 'Did you know?' fact about a song or artist from Groq.
+    """
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    prompt = f"""
+    Act as a music historian. For the song "{title}", provide exactly one short, interesting, and verifiable 'Did you know?' fact about the song, the artist, or the recording process.
+    The fact should be surprising and premium.
+    Format: Start directly with the fact. Do not include 'Did you know?' or any prefixes.
+    Max 1-2 sentences.
+    """
+
+    payload = {
+        "model": GROQ_MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a professional music historian."},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.7,
+        "max_tokens": 150
+    }
+
+    async with aiohttp.ClientSession() as session:
+        try:
+            async with session.post(GROQ_URL, headers=headers, data=json.dumps(payload)) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    fact = data["choices"][0]["message"]["content"].strip()
+                    return fact
+                else:
+                    return None
+        except Exception as e:
+            print(f"Groq Spotlight API Error: {e}")
+            return None
