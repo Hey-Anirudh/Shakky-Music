@@ -1,3 +1,5 @@
+from shakky import app
+from config import SUPPORT_CHAT
 from shakky.misc import SUDOERS
 from shakky.utils.database import get_lang, is_maintenance
 from strings import get_string

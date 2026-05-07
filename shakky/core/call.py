@@ -28,6 +28,8 @@ try:
     from pytgcalls.types.input_stream import AudioPiped, AudioVideoPiped
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
+    
+from shakky.utils.webapp import notify_webapp
     if not hasattr(PyTgCalls, "join_group_call"): raise ImportError("Legacy")
     try:
         from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
@@ -292,6 +294,7 @@ class Call:
                     if IS_LEGACY: await client.leave(chat_id)
                     else: await client.leave_group_call(chat_id)
                 except: pass
+                await notify_webapp(chat_id, is_playing=False, action="stop")
                 return
 
             if not skip_pop:
@@ -319,6 +322,7 @@ class Call:
                         if IS_LEGACY: await client.leave(chat_id)
                         else: await client.leave_group_call(chat_id)
                     except: pass
+                    await notify_webapp(chat_id, is_playing=False, action="stop")
                     return
 
             track = check[0]
@@ -343,6 +347,7 @@ class Call:
                     if IS_LEGACY: await client.leave(chat_id)
                     else: await client.leave_group_call(chat_id)
                 except: pass
+                await notify_webapp(chat_id, is_playing=False, action="stop")
                 return
 
             stream = self.build_stream(queued, video, {}, track.get("seconds", 0), chat_id=chat_id)
@@ -360,9 +365,11 @@ class Call:
                     if IS_LEGACY: await client.leave(chat_id)
                     else: await client.leave_group_call(chat_id)
                 except: pass
+                await notify_webapp(chat_id, is_playing=False, action="stop")
                 return
 
             asyncio.create_task(self._send_now_playing(chat_id, videoid, title, track["by"], track["chat_id"], mention))
+            asyncio.create_task(notify_webapp(chat_id, current_song=track, queue=check[1:] if len(check) > 1 else [], is_playing=True, action="update"))
 
     async def pause_stream(self, chat_id):
         ass = await group_assistant(self, chat_id)
@@ -387,6 +394,9 @@ class Call:
             if IS_LEGACY: await ass.leave(chat_id)
             else: await ass.leave_group_call(chat_id)
         except: pass
+
+    async def stop_stream_force(self, chat_id):
+        return await self.stop_stream(chat_id)
 
     async def _send_now_playing(self, chat_id, videoid, title, user, original_chat_id, mention):
         try:

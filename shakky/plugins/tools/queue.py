@@ -6,7 +6,7 @@ from pyrogram.errors import FloodWait
 from pyrogram.types import CallbackQuery, InputMediaPhoto, Message
 
 import config
-from shakky import app
+from shakky import app, LOGGER
 from shakky.misc import db
 from shakky.utils import ANNIEBIN, get_channeplayCB, seconds_to_min
 from shakky.utils.database import get_cmode, is_active_chat, is_music_playing
@@ -42,89 +42,96 @@ def get_duration(playing):
 )
 @language
 async def get_queue(client, message: Message, _):
-    if message.command[0][0] == "c":
-        chat_id = await get_cmode(message.chat.id)
-        if chat_id is None:
-            return await message.reply_text(_["setting_7"])
-        try:
-            await app.get_chat(chat_id)
-        except:
-            return await message.reply_text(_["cplay_4"])
-        cplay = True
-    else:
-        chat_id = message.chat.id
-        cplay = False
-    if not await is_active_chat(chat_id):
-        return await message.reply_text(_["general_5"])
-    got = db.get(chat_id)
-    if not got:
-        return await message.reply_text(_["queue_2"])
-    file = got[0]["file"]
-    videoid = got[0]["vidid"]
-    user = got[0]["by"]
-    title = (got[0]["title"]).title()
-    typo = (got[0]["streamtype"]).title()
-    DUR = get_duration(got)
-    if "live_" in file:
-        IMAGE = get_image(videoid)
-    elif "vid_" in file:
-        IMAGE = get_image(videoid)
-    elif "index_" in file:
-        IMAGE = config.STREAM_IMG_URL
-    else:
-        if videoid == "telegram":
-            IMAGE = (
-                config.TELEGRAM_AUDIO_URL
-                if typo == "Audio"
-                else config.TELEGRAM_VIDEO_URL
-            )
-        elif videoid == "soundcloud":
-            IMAGE = config.SOUNCLOUD_IMG_URL
+    try:
+        if message.command[0][0] == "c":
+            chat_id = await get_cmode(message.chat.id)
+            if chat_id is None:
+                return await message.reply_text(_["setting_7"])
+            try:
+                await app.get_chat(chat_id)
+            except:
+                return await message.reply_text(_["cplay_4"])
+            cplay = True
         else:
+            chat_id = message.chat.id
+            cplay = False
+        if not await is_active_chat(chat_id):
+            return await message.reply_text(_["general_5"])
+        got = db.get(chat_id)
+        if not got:
+            return await message.reply_text(_["queue_2"])
+        file = got[0]["file"]
+        videoid = got[0]["vidid"]
+        user = got[0]["by"]
+        title = (got[0]["title"]).title()
+        typo = (got[0]["streamtype"]).title()
+        DUR = get_duration(got)
+        if "live_" in file:
             IMAGE = get_image(videoid)
-    send = _["queue_6"] if DUR == "Unknown" else _["queue_7"]
-    cap = _["queue_8"].format(app.mention, title, typo, user, send)
-    upl = (
-        queue_markup(_, DUR, "c" if cplay else "g", videoid)
-        if DUR == "Unknown"
-        else queue_markup(
-            _,
-            DUR,
-            "c" if cplay else "g",
-            videoid,
-            seconds_to_min(got[0]["played"]),
-            got[0]["dur"],
+        elif "vid_" in file:
+            IMAGE = get_image(videoid)
+        elif "index_" in file:
+            IMAGE = config.STREAM_IMG_URL
+        else:
+            if videoid == "telegram":
+                IMAGE = (
+                    config.TELEGRAM_AUDIO_URL
+                    if typo == "Audio"
+                    else config.TELEGRAM_VIDEO_URL
+                )
+            elif videoid == "soundcloud":
+                IMAGE = config.SOUNCLOUD_IMG_URL
+            else:
+                IMAGE = get_image(videoid)
+        send = _["queue_6"] if DUR == "Unknown" else _["queue_7"]
+        cap = _["queue_8"].format(app.mention, title, typo, user, send)
+        upl = (
+            queue_markup(_, DUR, "c" if cplay else "g", videoid)
+            if DUR == "Unknown"
+            else queue_markup(
+                _,
+                DUR,
+                "c" if cplay else "g",
+                videoid,
+                seconds_to_min(got[0]["played"]),
+                got[0]["dur"],
+            )
         )
-    )
-    basic[videoid] = True
-    mystic = await message.reply_text(text=cap, reply_markup=upl)
-    if DUR != "Unknown":
-        try:
-            while db[chat_id][0]["vidid"] == videoid:
-                await asyncio.sleep(5)
-                if await is_active_chat(chat_id):
-                    if basic[videoid]:
-                        if await is_music_playing(chat_id):
-                            try:
-                                buttons = queue_markup(
-                                    _,
-                                    DUR,
-                                    "c" if cplay else "g",
-                                    videoid,
-                                    seconds_to_min(db[chat_id][0]["played"]),
-                                    db[chat_id][0]["dur"],
-                                )
-                                await mystic.edit_reply_markup(reply_markup=buttons)
-                            except FloodWait:
+        basic[videoid] = True
+        mystic = await message.reply_text(text=cap, reply_markup=upl)
+        if DUR != "Unknown":
+            try:
+                while db[chat_id][0]["vidid"] == videoid:
+                    await asyncio.sleep(5)
+                    if await is_active_chat(chat_id):
+                        if basic[videoid]:
+                            if await is_music_playing(chat_id):
+                                try:
+                                    buttons = queue_markup(
+                                        _,
+                                        DUR,
+                                        "c" if cplay else "g",
+                                        videoid,
+                                        seconds_to_min(db[chat_id][0]["played"]),
+                                        db[chat_id][0]["dur"],
+                                    )
+                                    await mystic.edit_reply_markup(reply_markup=buttons)
+                                except FloodWait:
+                                    pass
+                                except Exception:
+                                    break
+                            else:
                                 pass
                         else:
-                            pass
+                            break
                     else:
                         break
-                else:
-                    break
-        except:
-            return
+            except:
+                return
+    except Exception as e:
+        import traceback
+        LOGGER("shakky.queue").error(traceback.format_exc())
+        await message.reply_text(f"❌ **Queue Error:** <code>{e}</code>")
 
 
 @app.on_callback_query(filters.regex("GetTimer") & ~BANNED_USERS)
