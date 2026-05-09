@@ -29,7 +29,6 @@ try:
     from pytgcalls.types.input_stream.quality import HighQualityAudio, MediumQualityVideo
     from pytgcalls.types import Update
     
-from shakky.utils.webapp import notify_webapp
     if not hasattr(PyTgCalls, "join_group_call"): raise ImportError("Legacy")
     try:
         from pytgcalls.types.stream import StreamAudioEnded, StreamVideoEnded
