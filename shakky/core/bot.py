@@ -5,8 +5,6 @@ import httpx
 import config
 from ..logging import LOGGER
 
-# --- MONKEYPATCHES (Stability Fixes) ---
-# 1. Fix for Peer ID range issues (-1002... IDs) in older Pyrogram
 _get_peer = utils.get_peer_type
 def patched_get_peer_type(peer_id):
     if isinstance(peer_id, int) and peer_id < -1000000000000:
