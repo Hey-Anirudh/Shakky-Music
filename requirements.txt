@@ -1,6 +1,6 @@
-pyrogram==2.0.106
-TgCrypto
-pytgcalls==3.0.0.dev20
+kurigram==2.2.21
+TgCrypto==1.2.5
+py-tgcalls==2.3.3
 ntgcalls
 fastapi
 uvicorn

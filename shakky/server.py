@@ -228,6 +228,9 @@ async def update_state(state: QueueState):
 active_chat_users = {}
 
 def set_up_pyrogram_listener():
+    if set_up_pyrogram_listener._done:
+        return
+    set_up_pyrogram_listener._done = True
     try:
         from shakky import app as bot_app
         from pyrogram import filters
@@ -245,6 +248,8 @@ def set_up_pyrogram_listener():
         LOGGER.info("[Server] Passive Member Cacher attached.")
     except Exception as e:
         LOGGER.error(f"[Server] Failed to attach member cacher: {e}")
+
+set_up_pyrogram_listener._done = False
 
 @app.get("/api/members/{raw_id}")
 async def get_group_members(raw_id: str):
@@ -271,6 +276,63 @@ async def get_room(chat_id: Optional[str] = None):
             return HTMLResponse(content=f.read())
     return "room.html not found"
 
+
+# ============================================================
+# Lyrics / Karaoke API
+# ============================================================
+_lyrics_cache = {}
+
+
+@app.get("/api/lyrics")
+async def get_lyrics(title: str = ""):
+    """Return synced (LRC) lyrics for the current song title.
+    Uses a small cache to avoid re-fetching on every page load."""
+    title = title.strip()[:200]
+    if not title:
+        return {"status": "ok", "lyrics": []}
+
+    cached = _lyrics_cache.get(title)
+    if cached and (time.time() - cached["ts"]) < 3600:
+        return {"status": "ok", "lyrics": cached["data"]}
+
+    try:
+        from shakky.utils.lyrics import fetch_lrc, parse_lrc
+        raw = await fetch_lrc(title)
+        if not raw:
+            return {"status": "ok", "lyrics": []}
+        data = [[float(t), txt] for t, txt in parse_lrc(raw)]
+    except Exception:
+        return {"status": "ok", "lyrics": []}
+
+    _lyrics_cache[title] = {"ts": time.time(), "data": data}
+    return {"status": "ok", "lyrics": data}
+
+
+# ============================================================
+# Health / Monitoring
+# ============================================================
+_SERVER_STARTED = time.time()
+
+
+@app.get("/api/health")
+async def health():
+    rooms_with_users = 0
+    playing_rooms = 0
+    for key, room in live_rooms.items():
+        if room.get("users"):
+            rooms_with_users += 1
+        state = room.get("state")
+        if state and state.get("current"):
+            playing_rooms += 1
+    return {
+        "status": "ok",
+        "uptime": round(time.time() - _SERVER_STARTED, 1),
+        "rooms_total": len(live_rooms),
+        "rooms_live": rooms_with_users,
+        "rooms_playing": playing_rooms,
+        "ws_clients": len(sio.manager.rooms.get("/", {}) if hasattr(sio, "manager") else {}),
+    }
+
 async def start_webapp_server():
     import uvicorn
     import socket
@@ -284,7 +346,8 @@ async def start_webapp_server():
             host="0.0.0.0", 
             port=PORT, 
             log_level="warning", 
-            timeout_keep_alive=60
+            timeout_keep_alive=60,
+            handle_signals=False
         )
         server = uvicorn.Server(config_uv)
         

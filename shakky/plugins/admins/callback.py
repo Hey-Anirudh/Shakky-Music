@@ -1,7 +1,7 @@
 import asyncio
 import random
 from pyrogram import filters
-from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery, WebAppInfo
+from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
 
 from shakky import YouTube, app
 from shakky.misc import SUDOERS, db
@@ -83,7 +83,7 @@ async def pages_handler(client, CallbackQuery, _):
         print(f"Error in pages_handler: {e}")
         return
 
-@app.on_callback_query(filters.regex("ADMIN") & ~BANNED_USERS)
+@app.on_callback_query(filters.regex("ADMIN") & ~filters.regex("ADMIN  UpVote") & ~BANNED_USERS)
 @languageCB
 async def del_back_playlist(client, CallbackQuery, _):
     callback_data = CallbackQuery.data.strip()
@@ -195,6 +195,88 @@ async def del_back_playlist(client, CallbackQuery, _):
         await notify_webapp(chat_id, is_playing=True, action="seek", seek_to=to_seek)
         await CallbackQuery.message.reply_text(f"⏩ **Seeked** to {seconds_to_min(to_seek)} by {mention}")
 
+@app.on_callback_query(filters.regex("ADMIN  UpVote") & ~BANNED_USERS)
+@languageCB
+async def upvote_handler(client, CallbackQuery: CallbackQuery, _):
+    callback_data = CallbackQuery.data.strip()
+    callback_request = callback_data.split(None, 1)[1]
+    command, chat = callback_request.split("|")
+    if "_" in str(chat):
+        bet = chat.split("_")
+        chat_id = int(bet[0])
+        mode = bet[1]
+    else:
+        chat_id = int(chat)
+        mode = command
+    if not await is_active_chat(chat_id):
+        return await CallbackQuery.answer(_["general_5"], show_alert=True)
+
+    voter = CallbackQuery.from_user.id
+    required = await get_upvote_count(chat_id)
+
+    if chat_id not in upvoters:
+        upvoters[chat_id] = {}
+    msg_id = CallbackQuery.message.id
+    if msg_id not in upvoters[chat_id]:
+        upvoters[chat_id][msg_id] = set()
+    voted = upvoters[chat_id][msg_id]
+    if voter in voted:
+        return await CallbackQuery.answer("ʏᴏᴜ ᴀʟʀᴇᴀᴅʏ ᴠᴏᴛᴇᴅ.", show_alert=True)
+    voted.add(voter)
+
+    if len(voted) < required:
+        left = required - len(voted)
+        return await CallbackQuery.answer(
+            f"ᴠᴏᴛᴇ ᴛᴀʟʟɪᴇᴅ. {left} ᴍᴏʀᴇ ᴠᴏᴛᴇ(ꜱ) ɴᴇᴇᴅᴇᴅ."
+        )
+
+    del upvoters[chat_id][msg_id]
+    mention = CallbackQuery.from_user.mention
+    from shakky.core.call import ani
+    from shakky.utils.webapp import notify_webapp
+    from shakky.utils.stream.stream import skip_and_play
+
+    if mode == "Pause":
+        if chat_id not in db or not db[chat_id]:
+            return await CallbackQuery.answer("➲ Nothing is playing.", show_alert=True)
+        await ani.pause_stream(chat_id)
+        db[chat_id][0]["paused"] = True
+        await notify_webapp(chat_id, current_song=db[chat_id][0], queue=db.get(chat_id, [])[1:6], is_playing=False, action="pause")
+        await CallbackQuery.message.reply_text(f"⏸︎ **Paused** by {mention} (ᴠᴏᴛᴇᴅ)")
+    elif mode == "Resume":
+        if chat_id not in db or not db[chat_id]:
+            return await CallbackQuery.answer("➲ Nothing is paused.", show_alert=True)
+        await ani.resume_stream(chat_id)
+        db[chat_id][0]["paused"] = False
+        await notify_webapp(chat_id, current_song=db[chat_id][0], queue=db.get(chat_id, [])[1:6], is_playing=True, action="resume")
+        await CallbackQuery.message.reply_text(f"▷ **Resumed** by {mention} (ᴠᴏᴛᴇᴅ)")
+    elif mode == "Stop" or mode == "End":
+        db[chat_id] = []
+        await remove_active_chat(chat_id)
+        await ani.stop_stream(chat_id)
+        await notify_webapp(chat_id, is_playing=False, action="stop")
+        await CallbackQuery.message.reply_text(f"⏹︎ **Stopped** by {mention} (ᴠᴏᴛᴇᴅ)")
+        try:
+            await CallbackQuery.message.delete()
+        except:
+            pass
+    elif mode == "Skip" or mode == "Replay":
+        if chat_id not in db or not db[chat_id]:
+            return await CallbackQuery.answer("➲ Queue is empty.", show_alert=True)
+        await skip_and_play(chat_id, mention=mention)
+        if not db.get(chat_id):
+            await CallbackQuery.message.edit_text(
+                f"⏭︎ **Skipped** by {mention} (ᴠᴏᴛᴇᴅ)\n\n✧ Queue is now empty."
+            )
+        else:
+            try:
+                await CallbackQuery.message.delete()
+            except:
+                pass
+    else:
+        await CallbackQuery.answer(f"ᴠᴏᴛᴇ ᴄᴏᴍᴘʟᴇᴛᴇᴅ, ʙᴜᴛ {mode} ɪs ɴᴏᴛ ᴀ ᴠᴏᴛᴇᴀʙʟᴇ ᴀᴄᴛɪᴏɴ.")
+
+
 @app.on_callback_query(filters.regex("close") & ~BANNED_USERS)
 async def close_handler(client, CallbackQuery: CallbackQuery):
     await CallbackQuery.answer()
@@ -246,4 +328,7 @@ async def markup_timer():
             except:
                 continue
 
-asyncio.create_task(markup_timer())
+try:
+    asyncio.create_task(markup_timer())
+except RuntimeError:
+    pass

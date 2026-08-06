@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.session
+downloads/
+cache/
+playback/
+log.txt
+bot_error.txt
+last_error.txt
+last_error_utf8.txt

@@ -55,8 +55,9 @@ async def stream(
 
         if streamtype == "youtube":
             vidid = result.get("vidid")
-            title = str(result.get("title", "Unknown")).title()
+            title = str(result.get("title", "Unknown"))
             duration_min = result.get("duration", "0:00")
+            artist = str(result.get("artist") or "")
             thumbnail = result.get("thumbnail_url", result.get("thumb", ""))
             logger.info(f"[stream] Processing YouTube: {title} ({duration_min}) ID={vidid}")
             status = True if video else None
@@ -65,7 +66,7 @@ async def stream(
                 # 🩹 NOTE: Download is now inside the lock to preserve order
                 file_path, direct = await asyncio.wait_for(
                     YouTube.download(
-                        vidid, mystic, videoid=True, video=status, raw_query=raw_query or title
+                        vidid, mystic, videoid=True, video=status, raw_query=raw_query or title, chat_id=chat_id
                     ),
                     timeout=45
                 )
@@ -87,6 +88,7 @@ async def stream(
                     vidid,
                     user_id,
                     "video" if video else "audio",
+                    artist=artist,
                 )
                 position = len(db.get(chat_id)) - 1
                 try:
@@ -116,6 +118,7 @@ async def stream(
                     user_id,
                     "video" if video else "audio",
                     forceplay=forceplay,
+                    artist=artist,
                 )
                 
                 # --- Stats Update for Wrapped ---
@@ -139,7 +142,7 @@ async def stream(
                 asyncio.create_task(
                     _send_initial_now_playing(
                         chat_id, vidid, title, duration_min, user_name, user_id,
-                        original_chat_id, _, mystic
+                        original_chat_id, _, mystic, artist=artist
                     )
                 )
         
@@ -191,7 +194,7 @@ async def stream(
                 # Single track mode (result is a dict)
                 # We leverage the youtube block by rewriting result/streamtype
                 vidid = result.get("vidid")
-                title = str(result.get("title", "Unknown")).title()
+                title = str(result.get("title", "Unknown"))
                 
                 from shakky.misc import last_played
                 last_played[chat_id] = title
@@ -200,7 +203,7 @@ async def stream(
                 thumbnail = result.get("thumb", "")
                 status = True if video else None
                 
-                file_path, direct = await YouTube.download(vidid, mystic, video=status, raw_query=title)
+                file_path, direct = await YouTube.download(vidid, mystic, video=status, raw_query=title, chat_id=chat_id)
                 
                 if await is_active_chat(chat_id):
                     await put_queue(chat_id, original_chat_id, file_path if direct else f"vid_{vidid}", title, duration_min, user_name, vidid, user_id, "audio")
@@ -220,6 +223,67 @@ async def stream(
                     await ani.join_call(chat_id, original_chat_id, file_path, video=status, image=thumbnail)
                     db[chat_id][0]["start_time"] = time.time()
                     asyncio.create_task(_send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _, mystic))
+                return
+
+        elif streamtype == "playlist":
+            # result is a list of track dicts from YouTube.playlist()/Apple
+            if isinstance(result, list) and result:
+                await mystic.edit_text(f"➲ **Adding {len(result)} tracks from Playlist...**")
+                status = True if video else None
+                for i, track in enumerate(result):
+                    # Tolerate plain strings (e.g. Apple playlist item names)
+                    if isinstance(track, str):
+                        track = {"title": track, "vidid": None, "duration": "3:30"}
+                    title = str(track.get("title", "Unknown"))
+                    vidid = track.get("vidid", "")
+                    duration_min = track.get("duration", "0:00")
+                    thumbnail = track.get("thumbnail_url", track.get("thumb", ""))
+
+                    if i == 0:
+                        from shakky.misc import last_played
+                        last_played[chat_id] = title
+
+                    await put_queue(
+                        chat_id,
+                        original_chat_id,
+                        f"vid_{vidid}" if vidid else f"vid_{title}",
+                        title,
+                        duration_min,
+                        user_name,
+                        vidid,
+                        user_id,
+                        "video" if video else "audio",
+                        forceplay=forceplay,
+                    )
+
+                    # Resolve first song NOW if idle for instant playback
+                    if i == 0 and not await is_active_chat(chat_id) and vidid:
+                        try:
+                            first = db[chat_id][0]
+                            file_path, direct = await asyncio.wait_for(
+                                YouTube.download(vidid, mystic, videoid=True,
+                                                 video=status, raw_query=title, chat_id=chat_id),
+                                timeout=45
+                            )
+                            if file_path:
+                                first["file"] = file_path
+                        except Exception as e:
+                            logger.error(f"Playlist first-track resolve failed: {e}")
+
+                if not await is_active_chat(chat_id):
+                    first = db[chat_id][0]
+                    await ani.join_call(chat_id, original_chat_id, first["file"],
+                                        video=status, image=first.get("thumbnail_url"))
+                    first["start_time"] = time.time()
+                    asyncio.create_task(
+                        _send_initial_now_playing(chat_id, first.get("vidid"),
+                                                  first["title"], first["dur"],
+                                                  user_name, user_id, original_chat_id, _)
+                    )
+                else:
+                    await mystic.edit_text(
+                        f"➲ **Queued {len(result)} tracks at #{len(db[chat_id]) - len(result)}!**"
+                    )
                 return
 
         elif streamtype == "telegram":
@@ -272,7 +336,7 @@ async def _notify_safe(chat_id, **kwargs):
     except Exception as e:
         logger.warning(f"WebApp notify failed: {e}")
 
-async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _, mystic=None):
+async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_name, user_id, original_chat_id, _, mystic=None, artist=None):
     """Generate thumbnail and send Now Playing for initial play (background)."""
     try:
         # Delete the original mystic (Searching...) message first if it exists
@@ -286,7 +350,7 @@ async def _send_initial_now_playing(chat_id, vidid, title, duration_min, user_na
         
         # Generate custom thumbnail
         try:
-            thumb_path = await get_thumb(vidid, title, duration_min, user_name, chat_id, user_id=user_id)
+            thumb_path = await get_thumb(vidid, title, duration_min, artist or user_name, chat_id, user_id=user_id)
             current["thumbnail_url"] = f"/thumbs/{os.path.basename(thumb_path)}"
         except Exception as e:
             logger.error(f"Thumbnail generation error: {e}")
@@ -356,8 +420,8 @@ async def put_queue(
     user_id,
     streamtype,
     forceplay: Union[bool, str] = None,
+    artist: str = "",
 ):
-    title = title.title()
     if chat_id not in db:
         db[chat_id] = []
     
@@ -376,6 +440,7 @@ async def put_queue(
         "title": title,
         "dur": duration or "0:00",
         "by": user_name,
+        "artist": artist or user_name,
         "vidid": vidid,
         "user_id": user_id,
         "streamtype": streamtype,
@@ -388,6 +453,12 @@ async def put_queue(
         db[chat_id].insert(0, song_info)
     else:
         db[chat_id].append(song_info)
+    try:
+        from config import autoclean
+        if not str(file).startswith(("http://", "https://")):
+            autoclean.append(file)
+    except Exception:
+        pass
 
 async def skip_and_play(chat_id, mention=None):
     if chat_id not in db or not db[chat_id]:

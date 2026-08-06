@@ -18,7 +18,7 @@ from shakky.utils.formatters import convert_bytes
 from shakky.utils.inline.song import song_markup
 
 
-cookies_file = "shakky/assets/cookies.txt"
+cookies_file = "cookies.txt"
 
 SONG_COMMAND = ["song"]
 

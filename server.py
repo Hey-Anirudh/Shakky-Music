@@ -156,7 +156,7 @@ def normalize_id(chat_id) -> str:
 async def connect(sid, environ):
     print(f"[WS] Connected: {sid}")
 
-# 🗺️ Global SID to User mapping for cleanup
+# ðŸ—ºï¸ Global SID to User mapping for cleanup
 # Structure: { sid: (chat_key, user_id) }
 sid_to_user = {}
 
@@ -178,7 +178,7 @@ async def join_room(sid, data):
     if chat_key not in live_rooms:
         live_rooms[chat_key] = {"state": None, "users": {}}
 
-    # 🛂 UNIQUE TRACKING: Key by user_id instead of sid
+    # ðŸ›‚ UNIQUE TRACKING: Key by user_id instead of sid
     if user_id not in live_rooms[chat_key]["users"]:
         live_rooms[chat_key]["users"][user_id] = {
             "info": {"id": user_id, "name": name, "photo": photo},
@@ -223,63 +223,119 @@ async def disconnect(sid):
 
 @sio.event
 async def client_command(sid, data):
+    """WebApp player controls â†’ real VC engine commands.
+
+    Data shape (from room.html): {'chat_id': roomId, 'command': str, 'value': any}
+    Supported commands: skip, end_skip, pause, resume, play, seek, stop,
+    shuffle, loop, prev.
+    """
     try:
-        from Ani.misc import db
+        from shakky.misc import db
         import time
-        from Ani.utils.webapp import notify_webapp
         import asyncio
-        
-        real_id = -abs(int(chat_id))
+        import random
+        from shakky.utils.webapp import notify_webapp
+        from shakky.utils.stream.stream import skip_and_play
+        from shakky.utils.database import get_loop, set_loop
+        from shakky.core.call import Nand as call_engine
+
+        raw_id = data.get("chat_id")
+        command = data.get("command")
+        value = data.get("value")
+        if not raw_id or not command:
+            return
+
         # Robust ID resolution for WebApp commands
-        temp_id = chat_id[1:] if str(chat_id).startswith("c") else str(chat_id)
-        str_id = str(abs(int(temp_id)))
+        temp_id = raw_id[1:] if str(raw_id).startswith("c") else str(raw_id)
+        str_id = str(abs(int(temp_id))) if str(temp_id).lstrip("-").isdigit() else ""
+        if not str_id:
+            return
         if str_id.startswith("100"):
             real_id = int("-" + str_id)
         else:
             real_id = int("-100" + str_id)
-            
+
         print(f"[WS] Executing WebApp Command: {command} for {real_id}")
-            
+
         if command in ["skip", "end_skip"]:
             try:
-                from Ani.utils.stream.stream import skip_and_play
-                room = live_rooms.get(str(chat_id))
+                room = live_rooms.get(str(raw_id))
                 if command == "end_skip":
                     # Debounce simultaneous end_skips
                     if room and room.get("state") and not room["state"].get("is_playing", False):
                         return
-                
                 asyncio.create_task(skip_and_play(real_id))
             except Exception as e:
                 print(f"Skip error: {e}")
-                
+
         elif command == "pause":
-            if real_id in db and db[real_id]:
-                if not db[real_id][0].get("paused"):
-                    db[real_id][0]["paused"] = True
-                    db[real_id][0]["pause_time"] = time.time()
-                    await notify_webapp(real_id, is_playing=False, action="pause")
-                    
-        elif command == "resume" or command == "play":
-            if real_id in db and db[real_id]:
-                if db[real_id][0].get("paused"):
-                    db[real_id][0]["paused"] = False
-                    pause_dur = time.time() - db[real_id][0].get("pause_time", time.time())
-                    db[real_id][0]["start_time"] += pause_dur
-                    await notify_webapp(real_id, is_playing=True, action="resume")
-                    
+            current = db.get(real_id)
+            if current:
+                db[real_id][0]["paused"] = True
+                db[real_id][0]["pause_time"] = time.time()
+                await call_engine.pause_stream(real_id)
+                await notify_webapp(real_id, current_song=current[0],
+                                    queue=current[1:], is_playing=False, action="pause")
+
+        elif command in ("resume", "play"):
+            current = db.get(real_id)
+            if current:
+                if current[0].get("paused"):
+                    pause_dur = time.time() - current[0].get("pause_time", time.time())
+                    current[0]["start_time"] += pause_dur
+                    current[0]["paused"] = False
+                    await call_engine.resume_stream(real_id)
+                    await notify_webapp(real_id, current_song=current[0],
+                                        queue=current[1:], is_playing=True, action="resume")
+
         elif command == "seek":
-            if real_id in db and db[real_id]:
+            current = db.get(real_id)
+            if current and current[0].get("seconds"):
                 target = int(value or 0)
-                db[real_id][0]["start_time"] = time.time() - target
-                await notify_webapp(real_id, is_playing=not db[real_id][0].get("paused"), elapsed=target, action="seek")
-                
+                target = max(0, min(target, int(current[0].get("seconds", 0))))
+                current[0]["start_time"] = time.time() - target
+                current[0]["played"] = target
+                await call_engine.seek_stream(real_id, target)
+                await notify_webapp(real_id, current_song=current[0],
+                                    queue=current[1:],
+                                    is_playing=not current[0].get("paused"),
+                                    elapsed=target, action="seek")
+
         elif command == "stop":
             db[real_id] = []
+            await call_engine.stop_stream(real_id)
             await notify_webapp(real_id, is_playing=False, action="stop")
-            
+
+        elif command == "shuffle":
+            current = db.get(real_id)
+            if current and len(current) > 1:
+                now = current.pop(0)
+                random.shuffle(current)
+                current.insert(0, now)
+                await notify_webapp(real_id, current_song=now,
+                                    queue=current[1:], action="shuffle")
+
+        elif command == "loop":
+            current = db.get(real_id)
+            current_loop = await get_loop(real_id)
+            loop = 0 if current_loop > 0 else 1
+            await set_loop(real_id, loop)
+            await notify_webapp(real_id, current_song=(current[0] if current else None),
+                                queue=(current[1:] if current else []),
+                                loop=loop, action="loop")
+
+        elif command == "prev":
+            # Restart the current track from the beginning
+            current = db.get(real_id)
+            if current:
+                await call_engine.seek_stream(real_id, 0)
+                await notify_webapp(real_id, current_song=current[0],
+                                    queue=current[1:], action="update")
+
     except Exception as e:
+        import traceback
         print(f"[WS] Command execution failed: {e}")
+        traceback.print_exc()
 
 # ============================================================
 # REST API - Bot posts here to update state
@@ -297,23 +353,23 @@ async def update_state(state: QueueState):
     room = live_rooms.get(chat_key)
     old_state = room.get("state") if room else None
     
-    # 🩹 PRESERVATION: If the bot sends a queue-only update (missing 'current'), 
+    # ðŸ©¹ PRESERVATION: If the bot sends a queue-only update (missing 'current'), 
     # we MUST restore the current song from the old state BEFORE checking for "new song"
     if not state_dict.get("current") and old_state and old_state.get("current"):
         state_dict["current"] = old_state["current"]
         action = "update" # Force action to update if we're just restoring metadata
     
-    # 🩹 MEDIA URL PRESERVATION: If media_url is missing in the new state, keep the old one
+    # ðŸ©¹ MEDIA URL PRESERVATION: If media_url is missing in the new state, keep the old one
     if state_dict.get("current") and old_state and old_state.get("current"):
         if not state_dict["current"].get("media_url") and old_state["current"].get("media_url"):
             state_dict["current"]["media_url"] = old_state["current"]["media_url"]
 
-    # ⚓ STABLE ANCHOR: Determine if we should reset the sync point
+    # âš“ STABLE ANCHOR: Determine if we should reset the sync point
     action = state_dict.get("action", "update")
     is_playing = state_dict.get("is_playing", True)
     elapsed = float(state_dict.get("elapsed", 0.0))
     
-    # 🕵️ MEDIA FINGERPRINT: Check if this is truly a NEW song (Url-ID change)
+    # ðŸ•µï¸ MEDIA FINGERPRINT: Check if this is truly a NEW song (Url-ID change)
     is_new_song = False
     new_media = state_dict.get("current", {}).get("media_url") if state_dict.get("current") else None
     old_media = old_state.get("current", {}).get("media_url") if old_state and old_state.get("current") else None
@@ -322,7 +378,7 @@ async def update_state(state: QueueState):
         is_new_song = True
         print(f"[SYNC] New Song Detected: {new_media}")
 
-    # 🛂 SYNC LOCK: If it's the SAME song, don't reset the timer (stops the 'restart-on-queue' bug)
+    # ðŸ›‚ SYNC LOCK: If it's the SAME song, don't reset the timer (stops the 'restart-on-queue' bug)
     if not is_new_song and action == "play":
         action = "update"
         print(f"[SYNC] Sync Lock: Keeping current playback position while updating queue.")
@@ -391,7 +447,7 @@ active_chat_users = {}
 
 def set_up_pyrogram_listener():
     try:
-        from Ani import app as bot_app
+        from shakky import app as bot_app
         from pyrogram import filters
         
         @bot_app.on_message(filters.group, group=-1)
@@ -416,7 +472,7 @@ def set_up_pyrogram_listener():
                 "username": message.from_user.username or ""
             }
             
-        print("[DB] Passive Member Cache Listener attached to Pyrogram")
+        print("[DB] Passive Member Cache Listener attached to pyrogram")
     except Exception as e:
         print(f"[!] Failed to attach member cacher: {e}")
 
@@ -443,7 +499,7 @@ async def get_group_members(raw_id: str):
             
         if not members:
             try:
-                from Ani import app as bot_app
+                from shakky import app as bot_app
                 async for member in bot_app.get_chat_members(real_id, limit=30):
                     if member.user and not member.user.is_bot:
                         members.append({
@@ -464,7 +520,7 @@ async def get_group_members(raw_id: str):
 async def invite_friend(data: InviteData):
     """Send an invite message using the Telegram Bot"""
     try:
-        from Ani import app as bot_app
+        from shakky import app as bot_app
         from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
         import config
         
@@ -480,12 +536,12 @@ async def invite_friend(data: InviteData):
         bot_username = getattr(config, "BOT_USERNAME", "").replace('@', '')
         webapp_url = f"https://t.me/{bot_username}/join?startapp={abs(real_id)}"
         
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(text="🎧 Join Room", url=webapp_url)]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(text="ðŸŽ§ Join Room", url=webapp_url)]])
         text = (
-            f"✦ **ROOM INVITE**\n"
-            f"━━━━━━━━━━━━━━━━━━\n"
-            f"✧ <a href='tg://user?id={data.inviter_id}'>{data.inviter_name}</a> invited <a href='tg://user?id={data.target_id}'>{data.target_name}</a> to listen to music!\n"
-            f"✧ **Click below to join them.**"
+            f"âœ¦ **ROOM INVITE**\n"
+            f"â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”â”\n"
+            f"âœ§ <a href='tg://user?id={data.inviter_id}'>{data.inviter_name}</a> invited <a href='tg://user?id={data.target_id}'>{data.target_name}</a> to listen to music!\n"
+            f"âœ§ **Click below to join them.**"
         )
         
         await bot_app.send_message(real_id, text, reply_markup=keyboard, disable_web_page_preview=True)
@@ -516,7 +572,7 @@ async def start_webapp_server():
     import socket
     import sys
     
-    # 🔍 EARLY PORT CHECK: Detect 'already in use' before uvicorn crashes
+    # ðŸ” EARLY PORT CHECK: Detect 'already in use' before uvicorn crashes
     try:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         sock.bind(("0.0.0.0", PORT))

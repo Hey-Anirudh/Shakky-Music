@@ -63,9 +63,15 @@ class YouTubeAPI:
         self.download_folder = "downloads"
         self.cache_file = "song_cache.json"
         self.keyword_cache_file = "keyword_cache.json"
+        self.url_cache_file = "url_cache.json"
+        self.cookies_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "cookies.txt")
+        if not os.path.exists(self.cookies_file):
+            self.cookies_file = "cookies.txt"
+        # In-memory URL cache (stream-first resolution, LRU-ish)
+        self.url_cache = self._load_cache(self.url_cache_file)
+        self.url_cache_ttl = 15 * 60  # Resolved URLs expire after 15 min
         self.cache = {}
         self.keyword_cache = {}  # New cache for keyword-based songs
-        self._cleanup_task = None
         self._app = None
         self._youmusic_app = None
         self._initialized = False
@@ -90,9 +96,6 @@ class YouTubeAPI:
             # Load caches
             self.cache = self._load_cache(self.cache_file)
             self.keyword_cache = self._load_cache(self.keyword_cache_file)
-            
-            # Start cleanup scheduler
-            self._cleanup_task = asyncio.create_task(self._cleanup_scheduler())
             
             # Initialize Telegram clients
             await self._init_telegram_clients()
@@ -122,7 +125,7 @@ class YouTubeAPI:
                         no_updates=True
                     )
                     await self._app.start()
-                    logger.info("Main Pyrogram client started")
+                    logger.info("Main pyrogram client started")
                     
                     # Get channel ID if username is provided
                     if CHANNEL_USERNAME:
@@ -131,7 +134,7 @@ class YouTubeAPI:
                     # Add message handler for /addsong command
                     self._setup_handlers()
             except Exception as e:
-                logger.error(f"Failed to start main Pyrogram app: {e}")
+                logger.error(f"Failed to start main pyrogram app: {e}")
         
         # YouMusicRobot app
         if YOU_MUSIC_SESSION:
@@ -567,10 +570,34 @@ class YouTubeAPI:
     async def search(self, query: str):
         """Search YouTube for a query and return metadata with high precision (STEP 1)"""
         try:
+            # 0. Sanitize: collapse newlines/whitespace and ensure str
+            # (chat titles with \n or mentions crash VideosSearch internally)
+            query = " ".join(str(query or "").split())
+            if not query:
+                return {
+                    "title": "Unknown",
+                    "duration": "0:00",
+                    "vidid": None,
+                    "thumbnail_url": config.STREAM_IMG_URL
+                }
+
             # 1. Enhance query for music if not already present
             search_query = query
             if not any(k in query.lower() for k in ["music", "official", "lyrics", "audio", "video"]):
                 search_query = f"{query} music"
+
+            # 1c. FAST PATH: prefer the Shakky fetch API (yt-dlp based) — it
+            # never crashes on videos with missing channel ids (a known
+            # youtubesearchpython bug) and returns results super fast.
+            try:
+                from shakky.utils.api_client import api_available, api_search
+                if await api_available():
+                    api_result = await api_search(search_query, limit=10)
+                    if api_result and api_result.get("vidid"):
+                        logger.info(f"Search via API: {api_result.get('title')}")
+                        return api_result
+            except Exception as e:
+                logger.debug(f"API search path failed: {e}")
 
             # 2. Fetch multiple candidates (with concurrency control)
             async with self._search_semaphore:
@@ -643,10 +670,15 @@ class YouTubeAPI:
         except Exception as e:
             logger.error(f"YouTube search primary failed ({e}), using yt-dlp fallback...")
             try:
+                import traceback
+                logger.debug(f"Search traceback: {traceback.format_exc()}")
                 import yt_dlp
                 loop = asyncio.get_event_loop()
                 def _ytdlp_search():
                     opts = {'quiet': True, 'extract_flat': True}
+                    cookies = getattr(self, "cookies_file", "cookies.txt")
+                    if os.path.exists(cookies):
+                        opts['cookiefile'] = cookies
                     with yt_dlp.YoutubeDL(opts) as ydl:
                         data = ydl.extract_info(f"ytsearch1:{query}", download=False)
                         if 'entries' in data and len(data['entries']) > 0:
@@ -768,42 +800,6 @@ class YouTubeAPI:
         except Exception as e:
             logger.error(f"Error saving cache {cache_file}: {e}")
     
-    async def _cleanup_scheduler(self):
-        """Schedule cleanup every hour"""
-        await asyncio.sleep(60)
-        
-        while True:
-            try:
-                await self._cleanup_downloads()
-                await asyncio.sleep(3600)
-            except Exception as e:
-                logger.error(f"Error in cleanup scheduler: {e}")
-                await asyncio.sleep(300)
-    
-    async def _cleanup_downloads(self, max_age_hours: int = 24):
-        """Clean up old files in downloads folder"""
-        try:
-            now = time.time()
-            deleted_count = 0
-            
-            for filename in os.listdir(self.download_folder):
-                file_path = os.path.join(self.download_folder, filename)
-                try:
-                    if os.path.isfile(file_path):
-                        file_age = now - os.path.getmtime(file_path)
-                        if file_age > max_age_hours * 3600:
-                            os.unlink(file_path)
-                            deleted_count += 1
-                            logger.debug(f"Cleaned up old file: {filename}")
-                except Exception as e:
-                    logger.error(f"Error deleting {file_path}: {e}")
-            
-            if deleted_count > 0:
-                logger.info(f"Cleaned up {deleted_count} old files")
-                
-        except Exception as e:
-            logger.error(f"Error in cleanup: {e}")
-    
     def _get_video_id(self, link: str) -> str:
         """Extract video ID from YouTube URL"""
         if not link:
@@ -906,7 +902,7 @@ class YouTubeAPI:
                 logger.error(f"VideosSearch failed, trying yt-dlp info fallback: {e}")
                 # Fallback to yt-dlp to get Info
                 import yt_dlp
-                ydl_opts = {"quiet": True, "no_warnings": True, "format": "bestaudio/best"}
+                ydl_opts = self._get_ytdl_opts(format="bestaudio/best")
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
                     try:
                         loop = asyncio.get_event_loop()
@@ -1405,7 +1401,146 @@ class YouTubeAPI:
             logger.error(f"Error uploading to SmashDB: {e}")
             return None
     
-    async def download_song(self, link: str, raw_query: str = None) -> Optional[str]:
+    async def resolve_stream_url(self, video_id: str) -> Optional[str]:
+        """STREAM-FIRST: Resolve a direct bestaudio URL for instant playback.
+
+        Cached in-memory (self.url_cache) + persisted to url_cache.json with a
+        TTL, because resolved YouTube URLs expire (usually ~6 hours).
+        Returns (url, http_headers) or (None, None).
+        """
+        if not video_id or not re.match(r"^[a-zA-Z0-9_-]{11}$", str(video_id)):
+            return None, None
+
+        now = time.time()
+        cached = self.url_cache.get(video_id)
+        if cached and now - cached.get("ts", 0) < self.url_cache_ttl:
+            if cached.get("url"):
+                logger.info(f"Stream URL cache HIT: {video_id}")
+                return cached["url"], cached.get("headers", {})
+        elif cached:
+            self.url_cache.pop(video_id, None)
+
+        # FAST PATH: ask the Shakky fetch API for a fresh URL (super-fast,
+        # runs its own parallel yt-dlp pool + cache). Falls back to internal.
+        try:
+            from shakky.utils.api_client import api_available, api_stream_url
+            if await api_available():
+                api_url, api_headers = await api_stream_url(video_id)
+                if api_url:
+                    self.url_cache[video_id] = {
+                        "url": api_url,
+                        "headers": api_headers,
+                        "ts": now,
+                    }
+                    self._save_cache(self.url_cache_file, self.url_cache)
+                    logger.info(f"Stream URL via API: {video_id}")
+                    return api_url, api_headers
+        except Exception as e:
+            logger.debug(f"API stream resolve failed for {video_id}: {e}")
+
+        try:
+            def _extract():
+                opts = self._get_ytdl_opts(
+                    format="bestaudio[ext=m4a]/bestaudio/best",
+                )
+                with yt_dlp.YoutubeDL(opts) as ydl:
+                    return ydl.extract_info(
+                        f"https://www.youtube.com/watch?v={video_id}",
+                        download=False,
+                    )
+
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, _extract)
+
+            url = info.get("url")
+            headers = info.get("http_headers") or {}
+            if not url:
+                # Fall back to the first playable audio format URL
+                for f in info.get("formats", []) or []:
+                    if f.get("url") and f.get("acodec") not in (None, "none"):
+                        url = f["url"]
+                        break
+
+            if url and str(url).startswith(("http://", "https://")):
+                self.url_cache[video_id] = {
+                    "url": url,
+                    "headers": headers,
+                    "ts": now,
+                }
+                self._save_cache(self.url_cache_file, self.url_cache)
+                logger.info(f"Stream URL resolved: {video_id}")
+                return url, headers
+        except Exception as e:
+            logger.error(f"resolve_stream_url failed for {video_id}: {e}")
+
+        return None, None
+
+    async def _background_cache_audio(self, url: str, headers: dict, video_id: str, title: str, chat_id: int = None):
+        """Download the already-resolved stream to disk + Sentinel DB in the
+        background so future plays are instant. If chat_id is given and the
+        same track is still live, hot-swap the active stream to the local file."""
+        try:
+            ext = "m4a"
+            path = os.path.join(self.download_folder, f"{video_id}.{ext}")
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                await self._hot_swap(chat_id, video_id, path)
+                return
+            async with aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=300),
+                headers=headers or {},
+            ) as session:
+                async with session.get(url) as r:
+                    if r.status != 200:
+                        logger.warning(f"BG cache status {r.status} for {video_id}")
+                        return
+                    with open(path, "wb") as f:
+                        async for chunk in r.content.iter_chunked(65536):
+                            f.write(chunk)
+            if os.path.exists(path) and os.path.getsize(path) > 0:
+                logger.info(f"Background cached stream: {video_id} -> {path}")
+                try:
+                    await self._hot_swap(chat_id, video_id, path)
+                except Exception as e:
+                    logger.debug(f"Hot-swap failed: {e}")
+                try:
+                    await self._upload_to_sentinel_db(path, title, video_id)
+                except Exception as e:
+                    logger.debug(f"BG Sentinel upload failed: {e}")
+        except Exception as e:
+            logger.debug(f"Background cache failed for {video_id}: {e}")
+
+    async def _hot_swap(self, chat_id, video_id, path):
+        """If chat_id is provided and that chat is currently playing this
+        video id from a stream URL, silently switch playback to the local
+        file so the rest of the track is smooth (and future plays are on
+        disk). Returns True when a swap happened."""
+        if not chat_id:
+            return False
+        try:
+            from shakky.core.call import Nand
+            from shakky.misc import db
+            from shakky.utils.database import is_active_chat
+
+            if not await is_active_chat(chat_id):
+                return False
+            playing = db.get(chat_id)
+            if not playing:
+                return False
+            track = playing[0]
+            if str(track.get("vidid")) != str(video_id):
+                return False
+            current = str(track.get("file") or "")
+            if not current.startswith(("http://", "https://")):
+                return False
+            track["file"] = os.path.abspath(path)
+            await Nand.resync_stream(chat_id, refresh_time=False)
+            logger.info(f"Hot-swapped {video_id} to {path}")
+            return True
+        except Exception as e:
+            logger.debug(f"Hot-swap skipped for {video_id}: {e}")
+            return False
+
+    async def download_song(self, link: str, raw_query: str = None, chat_id: int = None) -> Optional[str]:
         """Main method to download song following Step 2 logic: 2A -> 2B
         With concurrency controls and download deduplication."""
         await self.initialize()
@@ -1442,7 +1577,7 @@ class YouTubeAPI:
                         logger.info(f"Using local file (post-dedup): {local_file}")
                         return local_file
                 
-                result = await self._do_download(link, query, video_id, raw_query)
+                result = await self._do_download(link, query, video_id, raw_query, chat_id)
                 return result
             
         except Exception as e:
@@ -1458,7 +1593,7 @@ class YouTubeAPI:
             except:
                 pass
     
-    async def _do_download(self, link, query, video_id, raw_query):
+    async def _do_download(self, link, query, video_id, raw_query, chat_id=None):
         """Actual download logic, called under dedup lock + semaphore."""
         async with self._download_semaphore:
             # 1. PRIMARY FAST CACHE: Check Sentinel DB (ShakkyData)
@@ -1479,7 +1614,39 @@ class YouTubeAPI:
                     try:
                         return await self._download_audio_file(self._app, old_db_msg, video_id)
                     except: pass
-            
+
+            # 3. FAST START VIA STREAM URL: begin playing immediately from the
+            #    direct URL (super fast), while the background cache downloads
+            #    the file to disk and hot-swaps the live stream to it when ready.
+            try:
+                stream_url, stream_headers = await self.resolve_stream_url(video_id)
+                if stream_url:
+                    title = raw_query or query or stream_url
+                    asyncio.create_task(
+                        self._background_cache_audio(stream_url, stream_headers, video_id, title, chat_id=chat_id)
+                    )
+                    logger.info(f"FAST-START stream URL: {video_id}")
+                    return stream_url
+            except Exception as e:
+                logger.debug(f"stream url resolve failed for {video_id}: {e}")
+
+            # 4. DOWNLOAD-FIRST VIA API: get an actual file on disk (the API
+            #    is the fast, cookie-aware downloader) then stream THAT file so
+            #    playback is smooth and cached for repeating it.
+            if video_id:
+                try:
+                    from shakky.utils.api_client import api_available, api_download_media
+                    if await api_available():
+                        api_path, api_ext = await api_download_media(video_id, format="mp3", dest=self.download_folder)
+                        if api_path:
+                            logger.info(f"File downloaded via API: {api_path}")
+                            asyncio.create_task(
+                                self._upload_to_sentinel_db(api_path, (raw_query or query), video_id)
+                            )
+                            return api_path
+                except Exception as e:
+                    logger.debug(f"API file download failed for {video_id}: {e}")
+
             # STEP 2B - Request via @YouMusicRobot
             if not raw_query or bool(re.search(self.regex, query)) or len(query) == 11:
                 logger.debug(f"Resolving title for external search: {query}")
@@ -1534,17 +1701,15 @@ class YouTubeAPI:
         try:
             logger.info("Trying yt-dlp...")
             file_path = os.path.join(self.download_folder, f"{video_id}.mp3")
-            ydl_opts = {
-                'format': 'bestaudio/best',
-                'outtmpl': file_path.replace('.mp3', '') + '.%(ext)s',
-                'quiet': True,
-                'no_warnings': True,
-                'postprocessors': [{
+            ydl_opts = self._get_ytdl_opts(
+                format='bestaudio/best',
+                outtmpl=file_path.replace('.mp3', '') + '.%(ext)s',
+                postprocessors=[{
                     'key': 'FFmpegExtractAudio',
                     'preferredcodec': 'mp3',
                     'preferredquality': '192',
                 }],
-            }
+            )
             
             def _ytdlp_audio():
                 with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1578,6 +1743,18 @@ class YouTubeAPI:
                 if os.path.exists(file_path):
                     return file_path
             
+            # DOWNLOAD-FIRST VIA API: get the video file from the API, then play
+            # the local file (smooth playback, no direct-URL lag).
+            try:
+                from shakky.utils.api_client import api_available, api_download_video
+                if await api_available():
+                    api_path = await api_download_video(video_id, dest=self.download_folder)
+                    if api_path:
+                        logger.info(f"Video downloaded via API: {api_path}")
+                        return api_path
+            except Exception as e:
+                logger.debug(f"API video download failed for {video_id}: {e}")
+            
             if VIDEO_API_URL and API_KEY:
                 try:
                     video_url = f"{VIDEO_API_URL}/video/{video_id}?api={API_KEY}"
@@ -1604,12 +1781,10 @@ class YouTubeAPI:
             
             try:
                 file_path = os.path.join(self.download_folder, f"{video_id}.mp4")
-                ydl_opts = {
-                    'format': 'best[ext=mp4]/best',
-                    'outtmpl': file_path.replace('.mp4', '') + '.%(ext)s',
-                    'quiet': True,
-                    'no_warnings': True,
-                }
+                ydl_opts = self._get_ytdl_opts(
+                    format='best[ext=mp4]/best',
+                    outtmpl=file_path.replace('.mp4', '') + '.%(ext)s',
+                )
                 
                 def _ytdlp_video():
                     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -1633,7 +1808,159 @@ class YouTubeAPI:
             return None
     
     # Compatibility methods for existing code
-    
+
+    def _get_ytdl_opts(self, **overrides) -> dict:
+        """Shared yt-dlp options with cookies + YouTube client clients enabled."""
+        opts = {
+            "quiet": True,
+            "no_warnings": True,
+            "nocheckcertificate": True,
+            "geo_bypass": True,
+            "extractor_retries": 2,
+        }
+        cookies = self.cookies_file
+        if os.path.exists(cookies):
+            opts["cookiefile"] = cookies
+        try:
+            # Rotate player clients to survive YouTube bot-challenge changes
+            opts["extractor_args"] = {
+                "youtube": {"player_client": ["android", "web", "tv", "mweb"]}
+            }
+        except Exception:
+            pass
+        opts.update(overrides)
+        return opts
+
+    async def formats(self, vidid: str, download: bool = False) -> tuple:
+        """Get available formats for a video (used by /song quality picker).
+
+        Returns (formats_available, link) where each format dict contains
+        'format', 'format_id', 'format_note', 'filesize' and 'resolution'.
+        """
+        url = f"https://www.youtube.com/watch?v={vidid}"
+        try:
+            def _fetch():
+                with yt_dlp.YoutubeDL(self._get_ytdl_opts()) as ydl:
+                    return ydl.extract_info(url, download=False)
+
+            loop = asyncio.get_event_loop()
+            info = await loop.run_in_executor(None, _fetch)
+
+            formats_available = []
+            seen = set()
+            for f in info.get("formats", []):
+                fid = str(f.get("format_id", ""))
+                if not fid.isdigit():
+                    continue  # Only standard numeric itags for the picker
+                if fid in seen:
+                    continue
+                seen.add(fid)
+                fsize = f.get("filesize") or f.get("filesize_approx")
+                formats_available.append({
+                    "format": f.get("format", f.get("resolution", fid)),
+                    "format_id": fid,
+                    "format_note": f.get("format_note", "") or f.get("resolution", ""),
+                    "filesize": fsize,
+                    "resolution": f.get("resolution", ""),
+                    "ext": f.get("ext", ""),
+                })
+            return formats_available, url
+        except Exception as e:
+            logger.error(f"formats() failed for {vidid}: {e}")
+            raise
+
+    async def slider(self, query, query_type):
+        """Return (title, duration_min, thumbnail, vidid) for a paginated
+        YouTube search result at position query_type (0-9)."""
+        try:
+            query_type = max(0, min(int(query_type), 9))
+            results = VideosSearch(str(query), limit=10)
+            search_result = await results.next()
+            items = search_result.get("result") or []
+            if not items:
+                raise ValueError("No results")
+            if query_type >= len(items):
+                query_type = 0
+            item = items[query_type]
+            title = item.get("title", query)
+            duration_min = item.get("duration", "0:00")
+            vidid = item.get("id", "")
+            thumbnail = config.STREAM_IMG_URL
+            if item.get("thumbnails") and isinstance(item["thumbnails"], list):
+                thumbnail = item["thumbnails"][0].get("url", config.STREAM_IMG_URL).split("?")[0]
+            return title, duration_min, thumbnail, vidid
+        except Exception as e:
+            logger.error(f"slider() failed for '{query}': {e}")
+            raise
+
+    async def playlist(self, link, limit=120, user_id=None, quality=None, playlist_id=None):
+        """Fetch tracks from a YouTube playlist URL.
+
+        Returns a list of track dicts:
+        {'title', 'duration', 'vidid', 'thumbnail_url'}
+        """
+        import urllib.parse as urlparse
+        try:
+            limit = int(limit or 120)
+            if limit > config.SERVER_PLAYLIST_LIMIT:
+                limit = config.SERVER_PLAYLIST_LIMIT
+
+            pl_id = playlist_id
+            if not pl_id:
+                try:
+                    pl_id = urlparse.parse_qs(urlparse.urlparse(link).query).get("list", [None])[0]
+                except Exception:
+                    pl_id = None
+            if not pl_id:
+                pl_id = link.strip().split("?")[0].rstrip("/").split("/")[-1]
+
+            def _fetch():
+                with yt_dlp.YoutubeDL(
+                    self._get_ytdl_opts(extract_flat=True, playlist_items=f"1-{limit}")
+                ) as ydl:
+                    info = ydl.extract_info(
+                        f"https://www.youtube.com/playlist?list={pl_id}", download=False
+                    )
+                return (info.get("entries") or []) if info else []
+
+            loop = asyncio.get_event_loop()
+            entries = await loop.run_in_executor(None, _fetch)
+
+            tracks = []
+            seen_ids = set()
+            for entry in entries:
+                if not entry or not entry.get("id"):
+                    continue
+                vidid = entry["id"]
+                if vidid in seen_ids:
+                    continue
+                seen_ids.add(vidid)
+                tracks.append({
+                    "title": entry.get("title") or f"YouTube {vidid}",
+                    "duration": self._fmt_duration(entry.get("duration")),
+                    "vidid": vidid,
+                    "thumbnail_url": (entry.get("thumbnails") or [{}])[0].get("url", config.STREAM_IMG_URL)
+                    if isinstance(entry.get("thumbnails"), list) and entry.get("thumbnails")
+                    else config.STREAM_IMG_URL,
+                })
+                if len(tracks) >= limit:
+                    break
+            return tracks
+        except Exception as e:
+            logger.error(f"playlist() failed for {link}: {e}")
+            return []
+
+    @staticmethod
+    def _fmt_duration(duration):
+        try:
+            sec = int(duration)
+            if sec <= 0:
+                return "0:00"
+            m, s = divmod(sec, 60)
+            return f"{m}:{s:02d}"
+        except Exception:
+            return "0:00"
+
     async def exists(self, link: str, videoid: Union[bool, str] = None):
         if videoid:
             link = self.base + link
@@ -1781,22 +2108,56 @@ class YouTubeAPI:
     async def download(self, link: str, mystic=None, video=False, raw_query: str = None, **kwargs) -> tuple:
         """Main download method for compatibility"""
         try:
-            if video:
+            format_id = kwargs.get("format_id")
+            songaudio = kwargs.get("songaudio")
+            songvideo = kwargs.get("songvideo")
+            title = kwargs.get("title")
+            chat_id = kwargs.get("chat_id")
+
+            if format_id and (songaudio or songvideo or video):
+                file_path = await self._download_with_format(link, format_id, audio=bool(songaudio))
+            elif songaudio or songvideo or video:
                 file_path = await self.download_video(link)
             else:
-                file_path = await self.download_song(link, raw_query=raw_query)
-            
+                file_path = await self.download_song(link, raw_query=raw_query or title, chat_id=chat_id)
+
             return file_path, True if file_path else None
         except Exception as e:
             logger.error(f"Download error: {e}")
             return None, None
+
+    async def _download_with_format(self, link: str, format_id: str, audio: bool) -> Optional[str]:
+        """Download a specific format via yt-dlp (respected by /song quality picker)."""
+        video_id = self._get_video_id(link)
+        ext = "mp3" if audio else "mp4"
+        out_path = os.path.join(self.download_folder, f"{video_id}_{format_id}.{ext}")
+
+        def _fetch():
+            post = []
+            fmt = format_id
+            if audio:
+                fmt = f"{format_id}/bestaudio/best"
+                post = [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}]
+            opts = self._get_ytdl_opts(
+                format=fmt,
+                outtmpl=out_path.replace(f".{ext}", "") + '.%(ext)s',
+            )
+            if post:
+                opts['postprocessors'] = post
+            with yt_dlp.YoutubeDL(opts) as ydl:
+                ydl.download([link])
+
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _fetch)
+
+        for cand in [out_path, out_path.replace(f".{ext}", ".mp3"), out_path.replace(f".{ext}", ".m4a")]:
+            if os.path.exists(cand):
+                return cand
+        return out_path if os.path.exists(out_path) else None
     
     async def close(self):
         """Clean up resources"""
         try:
-            if self._cleanup_task:
-                self._cleanup_task.cancel()
-            
             if self._app:
                 await self._app.stop()
                 self._app = None

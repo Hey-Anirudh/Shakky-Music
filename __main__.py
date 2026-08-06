@@ -1,4 +1,6 @@
 import asyncio
+import os
+from pyrogram import idle
 from shakky import app, LOGGER
 from shakky.core.call import Nand
 from shakky.core.userbot import userbot
@@ -21,15 +23,12 @@ async def main():
     from shakky.platforms import YouTube
     await YouTube.initialize()
     
-    # Start WebApp server in background (SmashMusic)
-    from server import start_webapp_server
-    asyncio.create_task(start_webapp_server())
-    
     LOGGER(__name__).info("Bot Started Successfully")
     
     # Start main bot
     await app.start()
-    await asyncio.get_event_loop().run_forever()
+    await idle()
+    os._exit(0)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -27,11 +27,34 @@ async def shutdown(sig, loop):
     loop.stop()
 
 
+_shutting_down = False
+
+
+def _handle_signal(sig, loop):
+    global _shutting_down
+    if _shutting_down:
+        return
+    _shutting_down = True
+    asyncio.create_task(shutdown(sig, loop))
+
+
 async def init():
     """
     WebApp-Only Bot Initialization.
     No Voice Chat engine — audio plays in the browser Mini App.
     """
+    loop = asyncio.get_running_loop()
+
+    # Register Ctrl+C / SIGTERM shutdown handlers so the bot actually exits.
+    # NOTE: uvicorn runs with handle_signals=False (see shakky/server.py) so
+    # these handlers are the single owner of SIGINT/SIGTERM.
+    try:
+        loop.add_signal_handler(signal.SIGINT, _handle_signal, signal.SIGINT, loop)
+        loop.add_signal_handler(signal.SIGTERM, _handle_signal, signal.SIGTERM, loop)
+        LOGGER("shakky").info("Signal handlers registered (SIGINT/SIGTERM).")
+    except NotImplementedError:
+        LOGGER("shakky").warning("add_signal_handler not supported; relying on idle() KeyboardInterrupt.")
+
     # Immediate Cleanup on Start
     try:
         from shakky.utils.cleanup import run_cleanup_now
@@ -55,67 +78,64 @@ async def init():
     except:
         pass
 
-    # Start Bot Client
-    await app.start()
-
-    # Load Plugins
-    for all_module in ALL_MODULES:
-        importlib.import_module("shakky.plugins" + all_module)
-    LOGGER("shakky.plugins").info("WebApp Bot Modules Loaded.")
-
-    # Start Assistant (needed for "find" downloads via @VKmusicTopbot)
+    # Start Bot Client + everything else inside try/finally so Ctrl+C at
+    # ANY point (including the long startup) logs and cleans up properly.
+    cleanup_task = None
     try:
-        from shakky import userbot
-        await userbot.start()
-        LOGGER("shakky").info("Assistant started (for music downloads).")
-    except Exception as e:
-        LOGGER("shakky").warning(f"Assistant start failed (yt-dlp fallback only): {e}")
+        # Start Bot Client
+        await app.start()
 
-    # Start WebApp Streaming Server
-    webapp_task = None
-    try:
-        from shakky.server import start_webapp_server
-        webapp_task = asyncio.create_task(start_webapp_server())
-        LOGGER("shakky").info(f"WebApp Player Server listening on port {config.WEBAPP_PORT}...")
-    except Exception as e:
-        LOGGER("shakky").error(f"Failed to start WebApp: {e}")
+        # Load Plugins
+        for all_module in ALL_MODULES:
+            importlib.import_module("shakky.plugins" + all_module)
+        LOGGER("shakky.plugins").info("WebApp Bot Modules Loaded.")
 
-    # Start PyTgCalls instances
-    await Nand.start()
-    
-    from shakky.platforms import YouTube
-    await YouTube.initialize()
-    
-    await Nand.decorators()
-    
-    # Start Periodic Cleanup (every 30m)
-    from shakky.utils.cleanup import start_cleaning
-    cleanup_task = asyncio.create_task(start_cleaning())
-    LOGGER("shakky").info("Background cleanup task started (runs every 30m).")
+        # Start Assistant (needed for "find" downloads via @VKmusicTopbot)
+        try:
+            from shakky import userbot
+            await userbot.start()
+            LOGGER("shakky").info("Assistant started (for music downloads).")
+        except Exception as e:
+            LOGGER("shakky").warning(f"Assistant start failed (yt-dlp fallback only): {e}")
 
-    LOGGER("shakky").info("Music Bot Started as Shakky Music Bot")
-    
-    try:
+        # Start PyTgCalls instances
+        await Nand.start()
+        
+        from shakky.platforms import YouTube
+        await YouTube.initialize()
+        
+        await Nand.decorators()
+        
+        # Start Periodic Cleanup (every 30m)
+        from shakky.utils.cleanup import start_cleaning
+        cleanup_task = asyncio.create_task(start_cleaning())
+        LOGGER("shakky").info("Background cleanup task started (runs every 30m).")
+
+        LOGGER("shakky").info("Music Bot Started as Shakky Music Bot")
+        
         await idle()
     except (KeyboardInterrupt, SystemExit):
         LOGGER("shakky").info("Stop signal received locally. Shutting down...")
     finally:
         # Cleanup
         LOGGER("shakky").info("Cleaning up and stopping clients...")
-        cleanup_task.cancel()
-        if webapp_task:
-            webapp_task.cancel()
-        
-        try:
+        if cleanup_task is not None:
+            cleanup_task.cancel()
+
+        async def _stop_clients():
             await app.stop()
             from shakky import userbot
             await userbot.stop()
             # Stop PyTgCalls engine
             await asyncio.wait_for(Nand.stop(), timeout=10)
+
+        try:
+            await asyncio.wait_for(_stop_clients(), timeout=15)
         except Exception as e:
             LOGGER("shakky").warning(f"Error during shutdown cleanup: {e}")
-        
-        # Final Force Exit to prevent hanging on Windows/VPS
+
+        # Final Force Exit to prevent hanging on Windows/VPS.
+        # Deliberately no awaits guard it, so it always runs.
         LOGGER("shakky").info("Exiting...")
         os._exit(0)
     

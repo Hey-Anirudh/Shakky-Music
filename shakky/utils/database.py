@@ -25,10 +25,7 @@ filtersdb = mongodb.filters
 notesdb = mongodb.notes
 statsdb = mongodb.stats
 gmuteddb = mongodb.gmuted
-cohostdb = mongodb.cohost
 autodjdb = mongodb.autodj
-prodjdb = mongodb.prodj
-podcastdb = mongodb.podcast
 
 
 active = []
@@ -47,10 +44,7 @@ playtype = {}
 skipmode = {}
 mute = {}
 gmuted = []
-cohost = {}
 autodj = {}
-prodj = {}
-podcast = {}
 
 async def get_assistant_number(chat_id: int) -> str:
     assistant = assistantdict.get(chat_id)
@@ -809,29 +803,6 @@ async def get_filters_count() -> dict:
         "filters_count": filters_count,
     }
 
-async def is_cohost(chat_id: int) -> bool:
-    mode = cohost.get(chat_id)
-    if mode is None:
-        user = await cohostdb.find_one({"chat_id": chat_id})
-        if not user:
-            cohost[chat_id] = False
-            return False
-        cohost[chat_id] = True
-        return True
-    return mode
-
-async def cohost_on(chat_id: int):
-    cohost[chat_id] = True
-    user = await cohostdb.find_one({"chat_id": chat_id})
-    if not user:
-        return await cohostdb.insert_one({"chat_id": chat_id})
-
-async def cohost_off(chat_id: int):
-    cohost[chat_id] = False
-    user = await cohostdb.find_one({"chat_id": chat_id})
-    if user:
-        return await cohostdb.delete_one({"chat_id": chat_id})
-
 async def is_autodj(chat_id: int) -> bool:
     mode = autodj.get(chat_id)
     if mode is None:
@@ -854,54 +825,6 @@ async def autodj_off(chat_id: int):
     user = await autodjdb.find_one({"chat_id": chat_id})
     if user:
         return await autodjdb.delete_one({"chat_id": chat_id})
-
-async def is_prodj(chat_id: int) -> bool:
-    mode = prodj.get(chat_id)
-    if mode is None:
-        user = await prodjdb.find_one({"chat_id": chat_id})
-        if not user:
-            prodj[chat_id] = False
-            return False
-        prodj[chat_id] = True
-        return True
-    return mode
-
-async def prodj_on(chat_id: int):
-    prodj[chat_id] = True
-    user = await prodjdb.find_one({"chat_id": chat_id})
-    if not user:
-        return await prodjdb.insert_one({"chat_id": chat_id})
-
-async def prodj_off(chat_id: int):
-    prodj[chat_id] = False
-    user = await prodjdb.find_one({"chat_id": chat_id})
-    if user:
-        return await prodjdb.delete_one({"chat_id": chat_id})
-
-async def is_podcast(chat_id: int) -> bool:
-    """Check if AI Podcast Host mode is enabled for a chat."""
-    from shakky.utils.database import podcastdb # Dynamic import if needed or use existing
-    mode = podcast.get(chat_id)
-    if mode is None:
-        user = await podcastdb.find_one({"chat_id": chat_id})
-        if not user:
-            podcast[chat_id] = False
-            return False
-        podcast[chat_id] = True
-        return True
-    return mode
-
-async def podcast_on(chat_id: int):
-    podcast[chat_id] = True
-    user = await podcastdb.find_one({"chat_id": chat_id})
-    if not user:
-        return await podcastdb.insert_one({"chat_id": chat_id})
-
-async def podcast_off(chat_id: int):
-    podcast[chat_id] = False
-    user = await podcastdb.find_one({"chat_id": chat_id})
-    if user:
-        return await podcastdb.delete_one({"chat_id": chat_id})
 
 async def _get_filters(chat_id: int) -> Dict[str, int]:
     _filters = await filtersdb.find_one({"chat_id": chat_id})
@@ -967,42 +890,6 @@ async def update_stats(user_id: int, chat_id: int, videoid: str, title: str, dur
         )
     except Exception as e:
         print(f"Error updating stats: {e}")
-
-async def update_weekly_stats(chat_id: int, user_id: int, videoid: str, title: str):
-    """
-    Tracks playback for the Weekly Group Chart.
-    """
-    try:
-        from datetime import datetime, timedelta
-        # Get start of current week (Monday)
-        now = datetime.now()
-        start_of_week = now - timedelta(days=now.weekday())
-        week_key = start_of_week.strftime("%Y-%W")
-        
-        # 1. Track Top Songs for this chat this week
-        await statsdb.update_one(
-            {"chat_id": chat_id, "week": week_key},
-            {
-                "$inc": {
-                    f"songs.{videoid}.count": 1,
-                    f"users.{user_id}.count": 1
-                },
-                "$set": {
-                    f"songs.{videoid}.title": title,
-                    "last_updated": now
-                }
-            },
-            upsert=True
-        )
-    except Exception as e:
-        print(f"Error updating weekly stats: {e}")
-
-async def get_weekly_stats(chat_id: int):
-    from datetime import datetime, timedelta
-    now = datetime.now()
-    start_of_week = now - timedelta(days=now.weekday())
-    week_key = start_of_week.strftime("%Y-%W")
-    return await statsdb.find_one({"chat_id": chat_id, "week": week_key})
 
 async def get_user_stats(user_id: int):
     return await statsdb.find_one({"user_id": user_id})

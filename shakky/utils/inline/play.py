@@ -3,8 +3,6 @@ import time
 from typing import Union
 from pyrogram.types import InlineKeyboardButton
 from shakky.utils.formatters import time_to_seconds
-from shakky import app
-import config
 
 LAST_UPDATE_TIME = {}
 
@@ -37,6 +35,15 @@ def should_update_progress(chat_id):
         return True
     return False
 
+def controls_row(chat_id):
+    """Pause / Play / Skip / Stop control row used in now-playing markups."""
+    return [
+        InlineKeyboardButton(text="Pause", callback_data=f"ADMIN Pause|{chat_id}"),
+        InlineKeyboardButton(text="Play", callback_data=f"ADMIN Resume|{chat_id}"),
+        InlineKeyboardButton(text="Skip", callback_data=f"ADMIN Skip|{chat_id}"),
+        InlineKeyboardButton(text="Stop", callback_data=f"ADMIN Stop|{chat_id}"),
+    ]
+
 def generate_progress_bar(played_sec, duration_sec):
     if duration_sec == 0:
         percentage = 0
@@ -50,10 +57,6 @@ def generate_progress_bar(played_sec, duration_sec):
     # Bold Lady Style Progress Bar
     bar = '▬' * max(0, filled_length - 1) + '●' + '▬' * max(0, bar_length - filled_length)
     return bar
-
-def _join_room_url(chat_id):
-    bot_uname = app.me.username if app.me else config.BOT_USERNAME.replace('@', '')
-    return f"https://t.me/{bot_uname}/join?startapp={abs(int(chat_id))}"
 
 def stream_markup_timer(_, chat_id, played, dur):
     if not should_update_progress(chat_id):
@@ -71,9 +74,7 @@ def stream_markup_timer(_, chat_id, played, dur):
                 callback_data="GetTimer",
             )
         ],
-        [
-            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
-        ],
+        controls_row(chat_id),
         [
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
@@ -96,9 +97,7 @@ def telegram_markup_timer(_, chat_id, played, dur):
                 callback_data="GetTimer",
             )
         ],
-        [
-            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
-        ],
+        controls_row(chat_id),
         [
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
@@ -107,9 +106,7 @@ def telegram_markup_timer(_, chat_id, played, dur):
 
 def stream_markup(_, chat_id):
     buttons = [
-        [
-            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
-        ],
+        controls_row(chat_id),
         [
             InlineKeyboardButton(text="✕ Close", callback_data=f"close|{chat_id}"),
         ],
@@ -188,9 +185,6 @@ def slider_markup(_, videoid, user_id, query, query_type, channel, fplay):
 def telegram_markup(_, chat_id):
     buttons = [
         [
-            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
-        ],
-        [
             InlineKeyboardButton(text="✕", callback_data="close"),
         ],
     ]
@@ -199,9 +193,6 @@ def telegram_markup(_, chat_id):
 
 def queue_markup(_, videoid, chat_id):
     buttons = [
-        [
-            InlineKeyboardButton(text="◎ Join Room", url=_join_room_url(chat_id)),
-        ],
         [
             InlineKeyboardButton(text="✕", callback_data=f"close|{chat_id}"),
         ],

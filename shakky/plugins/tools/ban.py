@@ -690,6 +690,30 @@ async def remove_warning(_, cq: CallbackQuery):
     await cq.message.edit(text)
 
 
+@app.on_callback_query(filters.regex(r"^unmute_(\d+)$") & ~BANNED_USERS)
+async def unmute_callback(_, cq: CallbackQuery):
+    from_user = cq.from_user
+    chat_id = cq.message.chat.id
+    permissions = await member_permissions(chat_id, from_user.id)
+    permission = "can_restrict_members"
+    if permission not in permissions:
+        return await cq.answer(
+            "ʏᴏᴜ ᴅᴏɴ'ᴛ ʜᴀᴠᴇ ᴇɴᴏᴜɢʜ ᴘᴇʀᴍɪssɪᴏɴs ᴛᴏ ᴘᴇʀғᴏʀᴍ ᴛʜɪs ᴀᴄᴛɪᴏɴ\n"
+            + f"ᴘᴇʀᴍɪssɪᴏɴ ɴᴇᴇᴅᴇᴅ: {permission}",
+            show_alert=True,
+        )
+    user_id = int(cq.data.split("_")[1])
+    try:
+        await app.unban_chat_member(chat_id, user_id)
+    except Exception:
+        return await cq.answer("ɪ ᴄᴏᴜʟᴅɴ'ᴛ ᴜɴᴍᴜᴛᴇ ᴛʜᴀᴛ ᴜsᴇʀ.", show_alert=True)
+    umention = (await app.get_users(user_id)).mention
+    text = cq.message.text.markdown
+    text = f"~~{text}~~\n\n"
+    text += f"__ᴜɴᴍᴜᴛᴇᴅ ʙʏ {from_user.mention} — {umention} ɪs ʀᴇsᴛᴏʀᴇᴅ.__"
+    await cq.message.edit(text)
+
+
 @app.on_message(filters.command("rmwarns") & ~filters.private & ~BANNED_USERS)
 @adminsOnly("can_restrict_members")
 async def remove_warnings(_, message: Message):
@@ -739,8 +763,6 @@ async def check_warns(_, message: Message):
 
 
 from pyrogram.errors import FloodWait
-
-BOT_ID = app.id
 
 async def ban_members(chat_id, user_id, bot_permission, total_members, msg):
     banned_count = 0

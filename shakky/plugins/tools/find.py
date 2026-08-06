@@ -105,7 +105,7 @@ async def find_song(_, message: Message):
                 # Fallback to direct assistant copy if bridge fails
                 await send_file_to_user(message, audio_msg, query, mystic)
         else:
-            await mystic.edit_text("➲ **Could not find any file for** `{query}`.")
+            await mystic.edit_text(f"➲ **Could not find any file for** `{query}`.")
 
     except Exception as e:
         await mystic.edit_text(f"➲ **Error finding song:** `{str(e)}`")

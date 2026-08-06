@@ -1,12 +1,11 @@
 from pyrogram import filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
+from pyrogram.types import Message
 
 import config
 from shakky import app
 from shakky.misc import db
 from shakky.utils.decorators.admins import AdminRightsCheck
 from shakky.utils.stream.stream import skip_and_play
-from shakky.utils.inline.play import stream_markup, _join_room_url
 from config import BANNED_USERS
 
 @app.on_message(

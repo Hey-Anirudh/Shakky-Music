@@ -20,7 +20,7 @@ async def user_has_permission(chat_title: str, chat_id: int, user_id: int, permi
 
 #async def user_has_permission(chat_title : str, chat_id: int, user_id: int, permission: str,bot=True) -> tuple[bool, str]:
     try:
-        if user_id in SUDORES:
+        if user_id in SUDOERS:
             have_permission = True
         else:
             chat_member = await app.get_chat_member(chat_id, user_id)

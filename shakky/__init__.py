@@ -11,6 +11,14 @@ if "tgcalls" not in sys.modules:
 os.environ["PYTGCALLS_IMPLEMENTATION"] = os.getenv("PYTGCALLS_IMPLEMENTATION", "native")
 os.environ["NTGCALLS"] = "1"
 
+# Kurigram (the pyrogram fork) drops pyrogram.emoji, but pykeyboard still
+# imports it (from pyrogram.emoji import *). Register an upstream compat shim.
+try:
+    from pyrogram import emoji  # noqa: F401
+except ImportError:
+    from shakky import _pyrogram_emoji as emoji
+    sys.modules["pyrogram.emoji"] = emoji
+
 from .logging import LOGGER
 from shakky.core.bot import ani
 from shakky.core.dir import dirr

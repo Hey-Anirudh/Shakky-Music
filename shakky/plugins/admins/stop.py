@@ -1,4 +1,4 @@
-﻿from pyrogram import filters
+from pyrogram import filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 from shakky import app
@@ -23,10 +23,6 @@ async def stop_music(cli, message: Message, _, chat_id):
     
     # Step 6: Notify WebApp
     await notify_webapp(chat_id, is_playing=False, action="stop")
-    
-    # [NEW] Disable AI Pilot
-    from shakky.misc import ai_mode
-    ai_mode[chat_id] = False
     
     await message.reply_text(
         f"⏹ **Stopped** by {message.from_user.mention}",

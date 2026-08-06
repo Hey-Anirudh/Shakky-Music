@@ -41,8 +41,6 @@ XCB = [
 db = {}
 # Tracks the last played song title for Groq recommendations
 last_played = {}
-# Tracks if AI-Recommend-Only mode is enabled for a chat
-ai_mode = {}
 
 def dbb():
     # Only logs now, never re-assigns the 'db' variable to avoid stale references.

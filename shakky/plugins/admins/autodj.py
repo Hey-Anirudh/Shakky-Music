@@ -10,13 +10,13 @@ from config import BANNED_USERS
 
 
 @app.on_message(
-    filters.command(["autodj", "autoDJ", "autoplay"])
+    filters.command(["autoplay", "autodj"])
     & filters.group
     & ~BANNED_USERS
 )
 @AdminRightsCheck
-async def autodj_command(client, message: Message, _, chat_id):
-    """Toggle the Smart Auto-DJ feature for this group."""
+async def autoplay_command(client, message: Message, _, chat_id):
+    """Toggle AutoPlay for this group."""
     args = message.text.split()
 
     if len(args) > 1:
@@ -24,17 +24,18 @@ async def autodj_command(client, message: Message, _, chat_id):
         if arg in ("on", "enable", "yes"):
             await autodj_on(chat_id)
             return await message.reply_text(
-                "<blockquote>✨ <b>Smart Auto-DJ</b></blockquote>\n"
+                "<blockquote>🔁 <b>AutoPlay</b></blockquote>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 "✧ <b>Status:</b> <code>Enabled</code>\n\n"
-                "<i>When the queue empties, I'll automatically\n"
-                "play a related track to keep the vibe alive.</i>",
+                "<i>When the queue ends, I'll automatically grab\n"
+                "YouTube recommendations of the current song\n"
+                "and keep the music going.</i>",
                 parse_mode=ParseMode.HTML,
             )
         elif arg in ("off", "disable", "no"):
             await autodj_off(chat_id)
             return await message.reply_text(
-                "<blockquote>✨ <b>Smart Auto-DJ</b></blockquote>\n"
+                "<blockquote>🔁 <b>AutoPlay</b></blockquote>\n"
                 "━━━━━━━━━━━━━━━━━━\n"
                 "✧ <b>Status:</b> <code>Disabled</code>\n\n"
                 "<i>Playback will stop when the queue is empty.</i>",
@@ -44,15 +45,15 @@ async def autodj_command(client, message: Message, _, chat_id):
     # No argument — show current status with toggle button
     is_on = await is_autodj(chat_id)
     status = "Enabled ✓" if is_on else "Disabled ✗"
-    toggle_text = "⏻ Disable" if is_on else "✨ Enable"
+    toggle_text = "⏻ Disable" if is_on else "🔁 Enable"
     toggle_data = f"autodj_toggle off|{chat_id}" if is_on else f"autodj_toggle on|{chat_id}"
 
     await message.reply_text(
-        f"<blockquote>✨ <b>Smart Auto-DJ</b></blockquote>\n"
+        f"<blockquote>🔁 <b>AutoPlay</b></blockquote>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"✧ <b>Status:</b> <code>{status}</code>\n\n"
-        f"<i>When enabled, the bot uses AI to find a\n"
-        f"related track when the queue runs out.</i>",
+        f"<i>When enabled, the bot pulls YouTube recommendations\n"
+        f"of the song now playing and continues automatically.</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             [
@@ -79,7 +80,7 @@ async def autodj_toggle_callback(client, callback):
             admins = adminlist.get(callback.message.chat.id)
             if admins and callback.from_user.id not in admins:
                 return await callback.answer(
-                    "➲ Only admins can toggle Auto-DJ.", show_alert=True
+                    "➲ Only admins can toggle AutoPlay.", show_alert=True
                 )
 
     mention = callback.from_user.mention
@@ -92,17 +93,17 @@ async def autodj_toggle_callback(client, callback):
     else:
         await autodj_off(chat_id)
         status = "Disabled ✗"
-        toggle_text = "✨ Enable"
+        toggle_text = "🔁 Enable"
         toggle_data = f"autodj_toggle on|{chat_id}"
 
-    await callback.answer(f"Auto-DJ: {status}")
+    await callback.answer(f"AutoPlay: {status}")
     await callback.edit_message_text(
-        f"<blockquote>✨ <b>Smart Auto-DJ</b></blockquote>\n"
+        f"<blockquote>🔁 <b>AutoPlay</b></blockquote>\n"
         f"━━━━━━━━━━━━━━━━━━\n"
         f"✧ <b>Status:</b> <code>{status}</code>\n"
         f"✧ <b>By:</b> {mention}\n\n"
-        f"<i>When enabled, the bot uses AI to find a\n"
-        f"related track when the queue runs out.</i>",
+        f"<i>When enabled, the bot pulls YouTube recommendations\n"
+        f"of the current song and plays them automatically.</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=InlineKeyboardMarkup(
             [

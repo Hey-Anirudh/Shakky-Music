@@ -51,6 +51,12 @@ API_URL        = getenv("API_URL", "https://api.nexgenbots.xyz")
 VIDEO_API_URL  = getenv("VIDEO_API_URL", "https://api.video.nexgenbots.xyz")
 API_KEY = getenv("API_KEY", None)
 
+# ─── SHAKKY LOCAL FETCH API (download-first playback) ───────
+# Same machine as the API by default (api/run.py listens on 8300).
+# Set SHAKKY_API_BASE if the API runs elsewhere.
+SHAKKY_API_BASE = getenv("SHAKKY_API_BASE", "http://localhost:8300")
+os.environ.setdefault("SHAKKY_API_BASE", SHAKKY_API_BASE)
+
 # ─── SPOTIFY ────────────────────────────────────────────────
 SPOTIFY_CLIENT_ID = getenv("SPOTIFY_CLIENT_ID", "22b6125bfe224587b722d6815002db2b")
 SPOTIFY_CLIENT_SECRET = getenv("SPOTIFY_CLIENT_SECRET", "c9c63c6fbf2f467c8bc68624851e9773")

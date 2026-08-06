@@ -72,6 +72,7 @@ async def play_commnd(client, message: Message, _):
     user_name = message.from_user.first_name
     chat_id = message.chat.id
     forceplay = "force" in message.command[0]
+    video = "vplay" in message.command[0]
 
     # --- Sticker-only loading indicator helper ---
     async def send_loader():
@@ -94,7 +95,7 @@ async def play_commnd(client, message: Message, _):
                 try:
                     await stream(
                         _, mystic, user_id, rm, chat_id, user_name, chat_id,
-                        streamtype="telegram", forceplay=forceplay
+                        streamtype="telegram", forceplay=forceplay, video=video
                     )
                     return
                 except Exception as e:
@@ -135,7 +136,7 @@ async def play_commnd(client, message: Message, _):
                 res, vidid = await Spotify.track(query)
                 await stream(
                     _, mystic, user_id, res, chat_id, user_name, chat_id,
-                    streamtype="spotify", spotify=True, forceplay=forceplay
+                    streamtype="spotify", spotify=True, forceplay=forceplay, video=video
                 )
                 return
             except Exception as e:
@@ -181,6 +182,7 @@ async def play_commnd(client, message: Message, _):
             chat_id,
             streamtype="youtube",
             forceplay=forceplay,
+            video=video,
             raw_query=query
         )
         
