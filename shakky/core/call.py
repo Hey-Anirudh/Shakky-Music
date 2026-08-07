@@ -8,7 +8,14 @@ from typing import Union
 
 from pyrogram import Client
 from pyrogram.enums import ChatType, ChatMemberStatus
-from pyrogram.errors import PeerIdInvalid, ChatWriteForbidden, UserNotParticipant
+from pyrogram.errors import (
+    PeerIdInvalid,
+    ChatWriteForbidden,
+    ChatAdminRequired,
+    InviteRequestSent,
+    UserAlreadyParticipant,
+    UserNotParticipant,
+)
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 import pytgcalls
@@ -207,11 +214,54 @@ class Call:
         
         stream = self.build_stream(link, video, payload, payload.get("seconds", 0) if payload else 0, chat_id=chat_id)
 
+        invited = False
         try:
-            if not userbot.me: await userbot.get_me()
-            try: await app.add_chat_members(chat_id, userbot.me.id)
-            except: pass
-        except: pass
+            if not userbot.me:
+                await userbot.get_me()
+            try:
+                await app.get_chat_member(chat_id, userbot.me.id)
+                invited = True
+                LOGGER.info(f"[join] Assistant {userbot.me.id} already a member of {chat_id}")
+            except UserNotParticipant:
+                await app.add_chat_members(chat_id, userbot.me.id)
+                invited = True
+                LOGGER.info(f"[join] Invited assistant {userbot.me.id} into {chat_id}")
+        except Exception as e:
+            LOGGER.warning(f"[join] Could not auto-invite assistant into {chat_id}: {e}")
+            invitelink = None
+            try:
+                invitelink = await app.export_chat_invite_link(chat_id)
+            except ChatAdminRequired:
+                LOGGER.warning(f"[join] Bot is not an admin in {chat_id} — cannot create an invite link. "
+                               f"Add {config.ASSUSERNAME} manually or promote the bot to admin.")
+            except Exception as e2:
+                LOGGER.warning(f"[join] Could not create invite link for {chat_id}: {e2}")
+            if invitelink:
+                if invitelink.startswith("https://t.me/+"):
+                    invitelink = invitelink.replace("https://t.me/+", "https://t.me/joinchat/")
+                try:
+                    await userbot.join_chat(invitelink)
+                    invited = True
+                    LOGGER.info(f"[join] Assistant {userbot.me.id} joined {chat_id} via invite link")
+                except InviteRequestSent:
+                    try:
+                        await app.approve_chat_join_request(chat_id, userbot.me.id)
+                        invited = True
+                        LOGGER.info(f"[join] Approved assistant {userbot.me.id} join request for {chat_id}")
+                    except Exception as e2:
+                        LOGGER.warning(f"[join] Could not approve assistant join request: {e2}")
+                except UserAlreadyParticipant:
+                    invited = True
+                except Exception as e2:
+                    LOGGER.warning(f"[join] Invite-link join failed: {e2}")
+
+        if invited:
+            for _ in range(3):
+                try:
+                    await userbot.get_chat(chat_id)
+                    break
+                except Exception:
+                    await asyncio.sleep(1)
 
         joined = False
         for attempt in range(2):
@@ -235,8 +285,14 @@ class Call:
             await music_on(chat_id)
             if video: await add_active_video_chat(chat_id)
         else:
-             try: await app.send_message(original_chat_id, text="⚠️ **Failed to join Voice Chat.**")
-             except: pass
+            hint = ""
+            if not invited:
+                hint = (
+                    f"\n\nℹ️ I couldn't add my assistant **{config.ASSUSERNAME}** to this chat automatically."
+                    f"\n➥ Please add **{config.ASSUSERNAME}** to this group manually (promote it to admin if possible), then try again."
+                )
+            try: await app.send_message(original_chat_id, text=f"❌ **Failed to join Voice Chat.**{hint}")
+            except Exception: pass
 
     async def seek_stream(self, chat_id, to_seek, *args, **kwargs):
         playing = db.get(chat_id)

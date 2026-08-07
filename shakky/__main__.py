@@ -6,7 +6,6 @@ import logging
 import asyncio
 import importlib
 import signal
-from pyrogram import idle
 import config
 from shakky import LOGGER, app
 logger = logging.getLogger("shakky")
@@ -17,43 +16,27 @@ from shakky.utils.database import get_banned_users, get_gbanned, get_gmuted_user
 from config import BANNED_USERS, GMUTED_USERS
 
 
-async def shutdown(sig, loop):
-    """Cleanup tasks tied to its shutdown."""
-    LOGGER("shakky").info(f"Received exit signal {sig.name}...")
-    tasks = [t for t in asyncio.all_tasks() if t is not asyncio.current_task()]
-    [task.cancel() for task in tasks]
-    LOGGER("shakky").info(f"Cancelling {len(tasks)} outstanding tasks")
-    await asyncio.gather(*tasks, return_exceptions=True)
-    loop.stop()
-
-
-_shutting_down = False
-
-
-def _handle_signal(sig, loop):
-    global _shutting_down
-    if _shutting_down:
-        return
-    _shutting_down = True
-    asyncio.create_task(shutdown(sig, loop))
-
-
 async def init():
     """
-    WebApp-Only Bot Initialization.
-    No Voice Chat engine — audio plays in the browser Mini App.
+    Music Bot Initialization.
     """
-    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
 
-    # Register Ctrl+C / SIGTERM shutdown handlers so the bot actually exits.
-    # NOTE: uvicorn runs with handle_signals=False (see shakky/server.py) so
-    # these handlers are the single owner of SIGINT/SIGTERM.
-    try:
-        loop.add_signal_handler(signal.SIGINT, _handle_signal, signal.SIGINT, loop)
-        loop.add_signal_handler(signal.SIGTERM, _handle_signal, signal.SIGTERM, loop)
-        LOGGER("shakky").info("Signal handlers registered (SIGINT/SIGTERM).")
-    except NotImplementedError:
-        LOGGER("shakky").warning("add_signal_handler not supported; relying on idle() KeyboardInterrupt.")
+    # Register Ctrl+C / Ctrl+Break / SIGTERM handlers so the bot actually
+    # exits (works on Windows AND Linux — loop.add_signal_handler does not
+    # exist on Windows). NOTE: uvicorn runs with handle_signals=False (see
+    # shakky/server.py) so these handlers are the single owner of the signals.
+    def _stop(*_):
+        stop_event.set()
+
+    for _sig in (signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGBREAK", None)):
+        if _sig is None:
+            continue
+        try:
+            signal.signal(_sig, _stop)
+            LOGGER("shakky").info(f"Signal handler registered: {_sig.name}")
+        except (ValueError, OSError) as e:
+            LOGGER("shakky").warning(f"Could not register {_sig}: {e}")
 
     # Immediate Cleanup on Start
     try:
@@ -113,7 +96,7 @@ async def init():
 
         LOGGER("shakky").info("Music Bot Started as Shakky Music Bot")
         
-        await idle()
+        await stop_event.wait()
     except (KeyboardInterrupt, SystemExit):
         LOGGER("shakky").info("Stop signal received locally. Shutting down...")
     finally:

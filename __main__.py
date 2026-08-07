@@ -1,34 +1,67 @@
 import asyncio
 import os
-from pyrogram import idle
+import signal
+
 from shakky import app, LOGGER
 from shakky.core.call import Nand
 from shakky.core.userbot import userbot
 
+_log = LOGGER(__name__)
+
+
+async def shutdown():
+    _log.info("Shutting down...")
+    tasks = []
+    for attr in ["one", "two", "three", "four", "five"]:
+        instance = getattr(Nand, attr, None)
+        if instance:
+            tasks.append(instance.stop())
+    tasks.extend([userbot.stop(), app.stop()])
+    try:
+        await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=10)
+    except asyncio.TimeoutError:
+        _log.warning("Graceful shutdown timed out; forcing exit.")
+    _log.info("Stopped. Bye!")
+    os._exit(0)
+
+
 async def main():
-    # Start all 5 assistant userbots
     await userbot.start()
-    
-    # Start PyTgCalls instances
-    await Nand.one.start()
-    for attr in ["two", "three", "four", "five"]:
+
+    for attr in ["one", "two", "three", "four", "five"]:
         instance = getattr(Nand, attr, None)
         if instance:
             try:
                 await instance.start()
-            except:
+            except Exception:
                 pass
-    
-    # Initialize YouTube API (SmashMusic: starts Telegram clients)
+
     from shakky.platforms import YouTube
     await YouTube.initialize()
-    
-    LOGGER(__name__).info("Bot Started Successfully")
-    
-    # Start main bot
+
+    _log.info("Bot Started Successfully")
+
     await app.start()
-    await idle()
-    os._exit(0)
+
+    stop_event = asyncio.Event()
+
+    def _stop(*_):
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM, getattr(signal, "SIGBREAK", None)):
+        if sig is None:
+            continue
+        try:
+            signal.signal(sig, _stop)
+        except (ValueError, OSError):
+            pass
+
+    await stop_event.wait()
+    await shutdown()
+
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        asyncio.run(shutdown())

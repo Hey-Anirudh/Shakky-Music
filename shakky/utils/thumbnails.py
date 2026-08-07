@@ -12,6 +12,8 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageOps
 import logging
 from concurrent.futures import ThreadPoolExecutor
 
+import config
+
 LOGGER = logging.getLogger(__name__)
 
 # Shared thread pool for CPU-bound PIL work (4 workers max)
@@ -39,16 +41,13 @@ HEIGHT = 720
 CARD = (90, 110, 1170, 590)
 ALBUM_SIZE = 320
 ALBUM_POS = (150, 190)
-TITLE_POS = (540, 255)
-ARTIST_POS = (545, 385)
-TITLE_FONT_SIZE = 80
-ARTIST_FONT_SIZE = 40
-MAX_TEXT_WIDTH = 520
-
-GRADIENT_TOP = (255, 80, 160)
-GRADIENT_BOTTOM = (240, 40, 120)
 CARD_COLOR = (10, 10, 10)
 ARTIST_COLOR = (180, 180, 180)
+CHIP_BG = (15, 15, 15)
+TITLE_FONT_SIZE = 56
+ARTIST_FONT_SIZE = 32
+SMALL_FONT_SIZE = 22
+MAX_TEXT_WIDTH = 590
 
 # Different gradient palettes — a song's hash picks one so every thumbnail
 # gets its own background color set.
@@ -106,12 +105,17 @@ def _fit_album(thumb_bytes, size: int, gradient: tuple) -> Image.Image:
         mask_tmp = ImageDraw.Draw(album)
         mask_tmp.ellipse((size // 4, size // 4, size * 3 // 4, size * 3 // 4), fill=(245, 245, 245))
 
+    radius = max(16, size // 5)
     mask = Image.new("L", (size, size), 0)
     md = ImageDraw.Draw(mask)
-    md.rounded_rectangle((0, 0, size, size), radius=35, fill=255)
+    md.rounded_rectangle((0, 0, size, size), radius=radius, fill=255)
 
     result = Image.new("RGB", (size, size), CARD_COLOR)
     result.paste(album, (0, 0), mask)
+
+    # Thin accent-colored border hugging the curved corners
+    rd = ImageDraw.Draw(result)
+    rd.rounded_rectangle((0, 0, size - 1, size - 1), radius=radius, outline=tuple(gradient[0]), width=4)
     return result
 
 
@@ -124,9 +128,33 @@ def _fit_text(draw, text, font, max_width):
         text = text[:-1]
 
 
-def _render_thumb(thumb_bytes: bytes, title: str, artist: str, output_path: str, gradient: tuple) -> str:
+def _wrap_text(draw, text, font, max_width, max_lines):
+    """Word-wrap text into up to max_lines lines; last line gets an ellipsis."""
+    words = str(text).split()
+    if not words:
+        return [""]
+    lines, current = [], ""
+    for w in words:
+        trial = (current + " " + w).strip()
+        if not current or draw.textbbox((0, 0), trial, font=font)[2] <= max_width:
+            current = trial
+        else:
+            lines.append(current)
+            current = w
+    if current:
+        lines.append(current)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        while lines and draw.textbbox((0, 0), lines[-1] + "…", font=font)[2] > max_width:
+            lines[-1] = lines[-1][:-1]
+        lines[-1] += "…"
+    return lines or [""]
+
+
+def _render_thumb(thumb_bytes: bytes, title: str, artist: str, duration: str, username: str, output_path: str, gradient: tuple) -> str:
     """CPU-bound PIL rendering."""
     top, bottom = gradient
+    accent = top
     bg = _make_gradient(WIDTH, HEIGHT, top, bottom).convert("RGBA")
 
     # Blurred shadow behind the card
@@ -153,14 +181,55 @@ def _render_thumb(thumb_bytes: bytes, title: str, artist: str, output_path: str,
         font_path = FONT_PATH if os.path.exists(FONT_PATH) else "arial.ttf"
         title_font = ImageFont.truetype(font_path, TITLE_FONT_SIZE)
         artist_font = ImageFont.truetype(font_path, ARTIST_FONT_SIZE)
+        small_font = ImageFont.truetype(font_path, SMALL_FONT_SIZE)
+        pill_font = ImageFont.truetype(font_path, 22)
     except Exception:
-        title_font = artist_font = ImageFont.load_default()
+        title_font = artist_font = small_font = pill_font = ImageFont.load_default()
 
-    clean_title = _fit_text(draw, title or "Unknown", title_font, MAX_TEXT_WIDTH)
-    clean_artist = _fit_text(draw, artist or "Unknown", artist_font, MAX_TEXT_WIDTH)
+    # --- "NOW PLAYING" pill with live dot (accent = gradient top color) ---
+    pill_text = "NOW PLAYING"
+    psize = draw.textbbox((0, 0), pill_text, font=pill_font)
+    pw = psize[2] + 48
+    pill = (540, 198, 540 + pw, 240)
+    draw.rounded_rectangle(pill, radius=21, fill=accent)
+    draw.ellipse((554, 210, 568, 224), fill="white")
+    draw.text((582, 201), pill_text, fill="white", font=pill_font)
 
-    draw.text(TITLE_POS, clean_title, fill="white", font=title_font)
-    draw.text(ARTIST_POS, clean_artist, fill=ARTIST_COLOR, font=artist_font)
+    # --- Title (up to 2 wrapped lines) ---
+    lines = _wrap_text(draw, title or "Unknown", title_font, MAX_TEXT_WIDTH, 2)
+    ty = 262
+    for ln in lines:
+        draw.text((540, ty), ln, fill="white", font=title_font)
+        ty += 66
+
+    # --- Artist with a small playing-equalizer accent ---
+    artist_text = _fit_text(draw, artist or "Unknown Artist", artist_font, MAX_TEXT_WIDTH - 60)
+    eq_x = 540
+    for h in (16, 26, 20):
+        draw.rounded_rectangle((eq_x, ty + 4 + 26 - h, eq_x + 6, ty + 4 + 26), radius=3, fill=accent)
+        eq_x += 10
+    draw.text((eq_x + 6, ty + 4), artist_text, fill=ARTIST_COLOR, font=artist_font)
+
+    # --- Progress bar + duration chip (bottom row) ---
+    bar_y = 545
+    bar_left, bar_right = 540, 925
+    draw.rounded_rectangle((bar_left, bar_y, bar_right, bar_y + 6), radius=3, fill=(35, 35, 35))
+    draw.rounded_rectangle(
+        (bar_left, bar_y, bar_left + int(0.4 * (bar_right - bar_left)), bar_y + 6),
+        radius=3,
+        fill=accent,
+    )
+
+    dur_text = _fit_text(draw, duration or "0:00", small_font, 150)
+    chip = (962, 536, 1134, 568)
+    draw.rounded_rectangle(chip, radius=16, fill=CHIP_BG, outline=accent, width=2)
+    tw = draw.textbbox((0, 0), dur_text, font=small_font)[2]
+    draw.text((962 + (172 - tw) // 2, 539), dur_text, fill=accent, font=small_font)
+
+    # --- Brand watermark (top-right of the card, bot username) ---
+    wm = _fit_text(draw, username or "Music Bot", small_font, 560)
+    ww = draw.textbbox((0, 0), wm, font=small_font)[2]
+    draw.text((1130 - ww, 128), wm, fill=(150, 150, 150), font=small_font)
 
     out = bg.convert("RGB")
     out.save(output_path, "JPEG", quality=95)
@@ -182,12 +251,13 @@ async def _download_thumb_bytes(url: str) -> bytes | None:
 async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
     """
     Generates an Airbuds-style thumbnail card.
-      - Pink gradient background with a blurred dark panel
+      - Gradient background with a blurred dark panel
       - Rounded album art on the left
-      - Song title + artist on the right
+      - "NOW PLAYING" pill, wrapped song title + artist on the right
+      - Progress bar, duration chip and brand watermark
     The card is cached per (videoid, chat_id). Returns the local path.
     """
-    output_path = os.path.join(THUMB_CACHE, f"{videoid}_{chat_id}.jpg")
+    output_path = os.path.join(THUMB_CACHE, f"{videoid}_{chat_id}_v2.jpg")
     if os.path.isfile(output_path):
         return output_path
 
@@ -202,8 +272,19 @@ async def get_thumb(videoid, title, duration, by, chat_id, user_id=None):
         artist = str(by or "")
         gradient = _gradient_for(videoid)
 
+        # Real bot username (fetched once at runtime, cached after first call)
+        username = config.BOT_USERNAME
+        try:
+            from shakky import app as _app
+            if _app.me is None:
+                await _app.get_me()
+            if _app.me and _app.me.username:
+                username = f"@{_app.me.username}"
+        except Exception:
+            pass
+
         def _render():
-            return _render_thumb(thumb_bytes, title, artist, output_path, gradient)
+            return _render_thumb(thumb_bytes, title, artist, duration, username, output_path, gradient)
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(_thumb_executor, _render)
